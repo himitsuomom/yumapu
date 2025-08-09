@@ -1,0 +1,24 @@
+version: "3.9"
+services:
+  api:
+    build:
+      context: ./server
+    container_name: promptsmith-api
+    env_file:
+      - ./server/.env # create this from .env.example and add your OPENAI_API_KEY
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./client
+    container_name: promptsmith-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+# After up, open: http://localhost:8080
+# The web app calls the API at http://localhost:8000 (published above).
