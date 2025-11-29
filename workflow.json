@@ -1,0 +1,249 @@
+{
+  "name": "Cross-Language Web Research to Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "research-webhook",
+        "responseMode": "lastNode",
+        "responseData": "allEntries"
+      },
+      "id": "Webhook_Trigger",
+      "name": "Trigger - Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "topic",
+              "value": "={{$json[\"topic\"] || \"AI automation with n8n\"}}"
+            }
+          ],
+          "json": [
+            {
+              "name": "languages",
+              "value": "[\"en\", \"ja\", \"zh\", \"ko\", \"es\"]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Set_Topic_Languages",
+      "name": "Set - Topic & Languages",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const keywords = [\"case study\", \"real example\", \"実例\", \"成功例\", \"研究\", \"研究論文\"];\nconst topic = $json.topic || \"AI automation with n8n\";\nconst langs = $json.languages || [\"en\", \"ja\", \"zh\", \"ko\", \"es\"];\nconst items = [];\nlangs.forEach((lang) => {\n  keywords.forEach((kw) => {\n    items.push({\n      json: {\n        topic,\n        language: lang,\n        query: `${topic} ${kw} ${lang}`\n      }\n    });\n  });\n});\nreturn items;"
+      },
+      "id": "Fn_Build_Queries",
+      "name": "Fn - Build Queries",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "url": "https://api.bing.microsoft.com/v7.0/search",
+        "options": {
+          "responseFormat": "json",
+          "responsePropertyName": "search",
+          "ignoreSslIssues": false,
+          "fullResponse": false,
+          "errorWhenResponseBodyIsNotJson": false
+        },
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{$json.query}}"
+            },
+            {
+              "name": "count",
+              "value": "5"
+            },
+            {
+              "name": "setLang",
+              "value": "={{$json.language}}"
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Ocp-Apim-Subscription-Key",
+              "value": "={{$env.BING_API_KEY}}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "sendHeaders": true,
+        "allowUnauthorizedCerts": false,
+        "requestMethod": "GET",
+        "jsonParameters": true
+      },
+      "id": "HTTP_Bing_Search",
+      "name": "HTTP - Bing Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        820,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const results = [];\nfor (const item of items) {\n  const { topic, language, query } = item.json;\n  const body = item.json.search || {};\n  const values = (body.webPages && body.webPages.value) ? body.webPages.value : [];\n  if (!values.length) {\n    results.push({ json: { topic, language, query, title: null, url: null, snippet: null, source: 'Bing Web Search API', rank: null, fetched_at: new Date().toISOString(), error_message: body.message || 'No results' } });\n    continue;\n  }\n  values.forEach((v, idx) => {\n    results.push({\n      json: {\n        topic,\n        language,\n        query,\n        title: v.name || v.title || '',\n        url: v.url || v.id || '',\n        snippet: v.snippet || v.description || '',\n        source: 'Bing Web Search API',\n        rank: idx + 1,\n        fetched_at: new Date().toISOString()\n      }\n    });\n  });\n}\nreturn results;"
+      },
+      "id": "Fn_Normalize",
+      "name": "Fn - Normalize Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const seen = new Map();\nconst unique = [];\nfor (const item of items) {\n  const url = item.json.url;\n  if (!url) continue;\n  const existingIndex = seen.get(url);\n  if (existingIndex === undefined) {\n    seen.set(url, unique.length);\n    unique.push(item);\n  } else {\n    const currentRank = unique[existingIndex].json.rank ?? Number.MAX_SAFE_INTEGER;\n    const newRank = item.json.rank ?? Number.MAX_SAFE_INTEGER;\n    if (newRank < currentRank) {\n      unique[existingIndex] = item;\n      seen.set(url, existingIndex);\n    }\n  }\n}\nreturn unique;"
+      },
+      "id": "Fn_Deduplicate",
+      "name": "Fn - Deduplicate by URL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "YOUR_SPREADSHEET_ID_HERE",
+        "range": "research_results",
+        "options": {
+          "valueInputMode": "RAW"
+        },
+        "valueInputMode": "RAW",
+        "columns": [
+          "topic",
+          "language",
+          "query",
+          "title",
+          "url",
+          "snippet",
+          "source",
+          "rank",
+          "fetched_at"
+        ]
+      },
+      "id": "Google_Sheets_Append",
+      "name": "Google Sheets - Append",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        1480,
+        300
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "GOOGLE_API_CREDENTIAL_PLACEHOLDER",
+          "name": "Google API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set - Topic & Languages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Topic & Languages": {
+      "main": [
+        [
+          {
+            "node": "Fn - Build Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fn - Build Queries": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Bing Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Bing Search": {
+      "main": [
+        [
+          {
+            "node": "Fn - Normalize Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fn - Normalize Results": {
+      "main": [
+        [
+          {
+            "node": "Fn - Deduplicate by URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fn - Deduplicate by URL": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "instanceId": "n8n-instance-placeholder"
+  },
+  "tags": []
+}
