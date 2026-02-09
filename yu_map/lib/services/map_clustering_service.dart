@@ -54,4 +54,12 @@ class MapClusteringService {
     final items = facilities.map((f) => FacilityMarker(f)).toList();
     _clusterManager.setItems(items);
   }
+
+  void onCameraMove(CameraPosition position) {
+    _clusterManager.onCameraMove(position);
+  }
+
+  void updateMap() {
+    _clusterManager.updateMap();
+  }
 }

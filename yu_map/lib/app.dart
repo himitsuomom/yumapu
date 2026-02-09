@@ -1,5 +1,6 @@
 // lib/app.dart
 import 'package:flutter/material.dart';
+import 'package:yu_map/presentation/screens/map_screen.dart';
 
 class YuMapApp extends StatelessWidget {
   const YuMapApp({super.key});
@@ -12,11 +13,7 @@ class YuMapApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      home: const Scaffold(
-        body: Center(
-          child: Text('Welcome to Yu-Map'),
-        ),
-      ),
+      home: const MapScreen(),
     );
   }
 }
