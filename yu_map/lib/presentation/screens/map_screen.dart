@@ -17,6 +17,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   final Completer<GoogleMapController> _controller = Completer();
   late MapClusteringService _clusteringService;
   Set<Marker> _markers = {};
+  bool _initialLocationSet = false;
 
   // Default initial position (Tokyo)
   static const CameraPosition _initialPosition = CameraPosition(
@@ -35,15 +36,26 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         });
       },
     );
-    _checkLocationPermission();
+    
+    // Listen to facilities changes (moved from build method for efficiency)
+    ref.listenManual(facilitiesInBoundsProvider, (previous, next) {
+      next.whenData((facilities) {
+        _clusteringService.updateItems(facilities);
+      });
+    });
+    
+    _initializeLocation();
   }
 
-  Future<void> _checkLocationPermission() async {
+  Future<void> _initializeLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
+      // Location services disabled, use default position and fetch facilities
+      _initialLocationSet = true;
+      _fetchInitialBounds();
       return;
     }
 
@@ -51,23 +63,44 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
+        // Permission denied, use default position and fetch facilities
+        _initialLocationSet = true;
+        _fetchInitialBounds();
         return;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
+      // Permission permanently denied, use default position and fetch facilities
+      _initialLocationSet = true;
+      _fetchInitialBounds();
       return;
     }
     
     // If permission granted, move to current location
-    final position = await Geolocator.getCurrentPosition();
+    // The camera animation will trigger onCameraIdle which will fetch facilities
+    try {
+      final position = await Geolocator.getCurrentPosition();
+      final controller = await _controller.future;
+      _initialLocationSet = true;
+      await controller.animateCamera(CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: LatLng(position.latitude, position.longitude),
+          zoom: 14,
+        ),
+      ));
+    } catch (e) {
+      // Failed to get location, use default position
+      _initialLocationSet = true;
+      _fetchInitialBounds();
+    }
+  }
+
+  Future<void> _fetchInitialBounds() async {
+    if (!_controller.isCompleted) return;
     final controller = await _controller.future;
-    controller.animateCamera(CameraUpdate.newCameraPosition(
-      CameraPosition(
-        target: LatLng(position.latitude, position.longitude),
-        zoom: 14,
-      ),
-    ));
+    final bounds = await controller.getVisibleRegion();
+    ref.read(mapBoundsProvider.notifier).state = bounds;
   }
 
   void _onCameraIdle() async {
@@ -85,13 +118,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to facilities changes
-    ref.listen(facilitiesInBoundsProvider, (previous, next) {
-      next.whenData((facilities) {
-        _clusteringService.updateItems(facilities);
-      });
-    });
-
     return Scaffold(
       body: Stack(
         children: [
@@ -104,10 +130,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             onMapCreated: (GoogleMapController controller) {
               _controller.complete(controller);
               _clusteringService.updateItems([]); // Initialize with empty
-              // Initial bounds update
-              controller.getVisibleRegion().then((bounds) {
-                 ref.read(mapBoundsProvider.notifier).state = bounds;
-              });
+              // Note: Initial bounds fetch is handled by _initializeLocation
+              // after location permission check completes to avoid race condition
             },
             onCameraMove: (position) {
               _clusteringService.onCameraMove(position);
