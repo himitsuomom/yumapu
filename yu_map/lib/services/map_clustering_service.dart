@@ -13,6 +13,9 @@ class FacilityMarker with ClusterItem {
 
 class MapClusteringService {
   late ClusterManager<FacilityMarker> _clusterManager;
+  
+  // Private cache field that was causing encapsulation issues
+  final Map<String, Facility> _cache = {};
 
   void initializeClusterManager({
     required Function(Set<Marker>) updateMarkers,
@@ -53,5 +56,19 @@ class MapClusteringService {
   void updateItems(List<Facility> facilities) {
     final items = facilities.map((f) => FacilityMarker(f)).toList();
     _clusterManager.setItems(items);
+    
+    // Update the cache with the facilities
+    _cache.clear();
+    for (final facility in facilities) {
+      _cache[facility.id] = facility;
+    }
+  }
+  
+  // Public getter to safely access the cache without breaking encapsulation
+  Map<String, Facility> get cachedFacilities => Map.unmodifiable(_cache);
+  
+  // Additional method to find a specific facility in cache
+  Facility? getCachedFacility(String id) {
+    return _cache[id];
   }
 }

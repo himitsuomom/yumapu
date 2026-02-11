@@ -1,9 +1,11 @@
 // lib/services/subscription_service.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 class SubscriptionService {
   static const String _premiumEntitlement = 'premium';
+  StreamSubscription<CustomerInfo>? _customerInfoSubscription;
 
   Future<void> initialize() async {
     await Purchases.setLogLevel(LogLevel.debug);
@@ -40,9 +42,24 @@ class SubscriptionService {
     }
   }
 
+  // Properly assign listener to _customerInfoSubscription field to prevent memory leaks
+  void listenToPremiumStatus(void Function(bool) callback) {
+    _customerInfoSubscription = Purchases.customerInfoStream.listen(
+      (info) {
+        callback(info.entitlements.all[_premiumEntitlement]?.isActive ?? false);
+      },
+    );
+  }
+
   Stream<bool> get premiumStatusStream {
     return Purchases.customerInfoStream.map(
       (info) => info.entitlements.all[_premiumEntitlement]?.isActive ?? false,
     );
+  }
+
+  // Dispose the subscription to prevent memory leaks
+  void dispose() {
+    _customerInfoSubscription?.cancel();
+    _customerInfoSubscription = null;
   }
 }
