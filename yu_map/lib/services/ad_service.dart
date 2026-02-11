@@ -7,10 +7,13 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 class AdService {
   RewardedAd? _rewardedAd;
   BannerAd? _bannerAd;
+  
+  // Map to track timestamps for facilities to prevent excessive ad viewing
+  final Map<String, DateTime> _timestampMap = {};
 
   Future<void> loadRewardedAd() async {
     await RewardedAd.load(
-      adUnitId: Platform.isAndroid 
+      adUnitId: Platform.isAndroid
           ? 'ca-app-pub-3940256099942544/5224354917' // Test ID
           : 'ca-app-pub-3940256099942544/1712485313', // Test ID
       request: const AdRequest(),
@@ -29,6 +32,23 @@ class AdService {
       debugPrint('Warning: Ad attempted to show before loading');
       return false;
     }
+
+    // Add null check before accessing the timestamp map at line 81 equivalent
+    final currentTime = DateTime.now();
+    if (_timestampMap.containsKey(facilityId)) {
+      final lastWatched = _timestampMap[facilityId];
+      if (lastWatched != null) { // Null check added as required
+        final timeDiff = currentTime.difference(lastWatched);
+        // Prevent showing ad if watched within the last 5 minutes
+        if (timeDiff.inMinutes < 5) {
+          debugPrint('Ad shown recently for facility $facilityId. Skipping.');
+          return false;
+        }
+      }
+    }
+    
+    // Update the timestamp for this facility
+    _timestampMap[facilityId] = currentTime;
 
     final completer = Completer<bool>();
 

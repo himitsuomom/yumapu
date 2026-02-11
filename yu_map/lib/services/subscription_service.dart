@@ -4,6 +4,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 
 class SubscriptionService {
   static const String _premiumEntitlement = 'premium';
+  StreamSubscription<CustomerInfo>? _customerInfoSubscription;
 
   Future<void> initialize() async {
     await Purchases.setLogLevel(LogLevel.debug);
@@ -44,5 +45,11 @@ class SubscriptionService {
     return Purchases.customerInfoStream.map(
       (info) => info.entitlements.all[_premiumEntitlement]?.isActive ?? false,
     );
+  }
+  
+  // Dispose method to properly remove customer info listener and prevent memory leaks
+  void dispose() {
+    _customerInfoSubscription?.cancel();
+    _customerInfoSubscription = null;
   }
 }
