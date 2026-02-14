@@ -122,7 +122,14 @@ class FacilityService {
   // Simplified redundant null coalescing (fixed)
   Future<Facility?> getFacilityById(String id) async {
     if (_cache.containsKey(id)) {
-      return Facility.fromJson(_cache[id]);
+      final cachedData = _cache[id];
+      // Validate the cached data before using it to avoid runtime errors
+      if (cachedData is Map<String, dynamic> && cachedData.containsKey('id')) {
+        return Facility.fromJson(cachedData);
+      } else {
+        // If cached data is invalid, remove it and fetch fresh data
+        _cache.remove(id);
+      }
     }
 
     final response = await _client
@@ -131,7 +138,12 @@ class FacilityService {
         .eq('id', id)
         .single();
 
-    _cache[id] = response;
-    return Facility.fromJson(response);
+    // Validate the response before caching
+    if (response is Map<String, dynamic> && response.containsKey('id')) {
+      _cache[id] = response;
+      return Facility.fromJson(response);
+    }
+
+    return null; // Return null if response is not valid
   }
 }

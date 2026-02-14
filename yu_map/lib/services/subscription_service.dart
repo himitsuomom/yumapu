@@ -51,12 +51,6 @@ class SubscriptionService {
     );
   }
 
-  Stream<bool> get premiumStatusStream {
-    return Purchases.customerInfoStream.map(
-      (info) => info.entitlements.all[_premiumEntitlement]?.isActive ?? false,
-    );
-  }
-
   // Dispose the subscription to prevent memory leaks
   void dispose() {
     _customerInfoSubscription?.cancel();
