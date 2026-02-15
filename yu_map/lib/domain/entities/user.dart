@@ -35,6 +35,41 @@ class User extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'username': username,
+      'display_name': displayName,
+      'avatar_url': avatarUrl,
+      'bio': bio,
+      'is_premium': isPremium,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+
+  User copyWith({
+    String? id,
+    String? email,
+    String? username,
+    String? displayName,
+    String? avatarUrl,
+    String? bio,
+    bool? isPremium,
+    DateTime? createdAt,
+  }) {
+    return User(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      username: username ?? this.username,
+      displayName: displayName ?? this.displayName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      bio: bio ?? this.bio,
+      isPremium: isPremium ?? this.isPremium,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   @override
   List<Object?> get props => [id, username, displayName, isPremium];
 }

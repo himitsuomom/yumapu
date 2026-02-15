@@ -1,0 +1,34 @@
+# This file configures the static analysis results for the project.
+# https://dart.dev/guides/language/analysis-options
+
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Error rules
+    avoid_print: true
+    avoid_relative_lib_imports: true
+    no_duplicate_case_values: true
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+
+    # Style rules
+    always_declare_return_types: true
+    annotate_overrides: true
+    avoid_empty_else: true
+    avoid_unnecessary_containers: true
+    prefer_final_fields: true
+    prefer_final_locals: true
+    prefer_is_empty: true
+    prefer_is_not_empty: true
+    prefer_single_quotes: true
+    sort_child_properties_last: true
+    use_key_in_widget_constructors: true
+
+analyzer:
+  errors:
+    missing_return: error
+    dead_code: warning
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"

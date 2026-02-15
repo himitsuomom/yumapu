@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from openai import OpenAI, OpenAIError
@@ -249,7 +249,7 @@ Provide JSON with keys:
 def generate_markdown_report(
     topic: str, records: List[Dict[str, Any]], analyses: List[AnalysisResult], comparison: Dict[str, Any]
 ) -> str:
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     languages = sorted({rec.get("language", "") for rec in records if rec.get("language")})
 
     lines: List[str] = []

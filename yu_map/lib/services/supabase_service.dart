@@ -1,14 +1,20 @@
 // lib/services/supabase_service.dart
-import 'package:supabase_flutter/supabase_flutter.dart';
+//
+// NOTE: This service is superseded by FacilityService which provides
+// the same functionality plus caching. Kept for backwards compatibility
+// and potential future use with complex join queries.
+// Consider removing if no longer referenced.
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yu_map/core/utils/query_utils.dart';
+
+@Deprecated('Use FacilityService instead for facility searches with caching.')
 class SupabaseService {
   final SupabaseClient _client;
 
   SupabaseService(this._client);
 
-  /// Correctly handles .contains() for joined relationship data
-  /// Instead of using .contains() incorrectly on joined tables,
-  /// we use proper PostgREST syntax with .filter()
+  /// Searches facilities with amenity filters using correct PostgREST syntax.
   Future<List<Map<String, dynamic>>> searchFacilitiesWithAmenities({
     String? nameContains,
     List<String>? requiredAmenities,
@@ -31,9 +37,10 @@ class SupabaseService {
           )
         ''');
 
-    // Apply name filter if provided
+    // Apply name filter with sanitized input
     if (nameContains != null && nameContains.isNotEmpty) {
-      query = query.ilike('name', '%$nameContains%');
+      final sanitized = sanitizeLikeInput(nameContains);
+      query = query.ilike('name', '%$sanitized%');
     }
 
     // Apply location filters
@@ -45,17 +52,10 @@ class SupabaseService {
       query = query.eq('facility_type_id', facilityTypeId);
     }
 
-    // Apply amenities filter using correct PostgREST syntax
+    // Apply amenities filter using correct PostgREST / JSONB syntax
     if (requiredAmenities != null && requiredAmenities.isNotEmpty) {
-      // Method 1: Using PostgREST's filter functionality
-      for (String amenity in requiredAmenities) {
-        // For JSONB columns like 'amenities', use proper Supabase syntax
+      for (final amenity in requiredAmenities) {
         query = query.contains('amenities', {amenity: true});
-        
-        // Alternative approach (more reliable for complex relationships):
-        // We can join with the facility_amenities table if needed
-        // query = query.filter('facility_amenities.amenity_name', 'eq', amenity)
-        //              .filter('facility_amenities.is_available', 'eq', true);
       }
     }
 
@@ -63,8 +63,7 @@ class SupabaseService {
     return response;
   }
 
-  /// Alternative method for handling complex relationship searches
-  /// This properly joins and filters related data
+  /// Searches facilities with complex filters using inner joins.
   Future<List<Map<String, dynamic>>> searchFacilitiesWithComplexFilters({
     Map<String, dynamic>? filters,
   }) async {

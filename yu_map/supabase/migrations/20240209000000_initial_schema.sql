@@ -26,11 +26,15 @@ CREATE TABLE facilities (
     prefecture_id UUID REFERENCES prefectures(id),
     facility_type_id UUID REFERENCES facility_types(id),
     location GEOGRAPHY(POINT, 4326) NOT NULL,
+    -- Denormalized lat/lng for simpler client-side queries
+    latitude DOUBLE PRECISION GENERATED ALWAYS AS (ST_Y(location::geometry)) STORED,
+    longitude DOUBLE PRECISION GENERATED ALWAYS AS (ST_X(location::geometry)) STORED,
     address TEXT,
     phone VARCHAR(20),
     website VARCHAR(500),
     business_hours JSONB DEFAULT '{}',
     price_info JSONB DEFAULT '{}',
+    amenities JSONB DEFAULT '{}',
     data_source VARCHAR(50) NOT NULL DEFAULT 'government',
     data_quality_score INT DEFAULT 1 CHECK (data_quality_score BETWEEN 1 AND 5),
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -42,6 +46,8 @@ CREATE INDEX idx_facilities_location ON facilities USING GIST (location);
 CREATE INDEX idx_facilities_prefecture ON facilities (prefecture_id);
 CREATE INDEX idx_facilities_type ON facilities (facility_type_id);
 CREATE INDEX idx_facilities_google_place ON facilities (google_place_id);
+CREATE INDEX idx_facilities_name ON facilities USING GIN (name gin_trgm_ops);
+CREATE INDEX idx_facilities_amenities ON facilities USING GIN (amenities);
 
 -- 4. AMENITIES
 CREATE TABLE amenities (
@@ -97,7 +103,7 @@ CREATE TABLE facility_amenities (
 CREATE INDEX idx_facility_amenities_facility ON facility_amenities (facility_id);
 CREATE INDEX idx_facility_amenities_confidence ON facility_amenities (confidence_score DESC);
 
--- 7. VISITS
+-- 7. VISITS (with duplicate prevention per day)
 CREATE TABLE visits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -107,16 +113,28 @@ CREATE TABLE visits (
     check_in_location GEOGRAPHY(POINT, 4326)
 );
 
+-- Prevent duplicate check-ins to the same facility on the same day
+CREATE UNIQUE INDEX idx_visits_unique_daily
+    ON visits (user_id, facility_id, (visited_at::date));
+
+CREATE INDEX idx_visits_user ON visits (user_id);
+CREATE INDEX idx_visits_facility ON visits (facility_id);
+
 -- 8. REVIEWS
 CREATE TABLE reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     facility_id UUID NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
     content TEXT,
-    rating INT CHECK (rating BETWEEN 1 AND 5),
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     likes_count INT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX idx_reviews_facility ON reviews (facility_id);
+CREATE INDEX idx_reviews_user ON reviews (user_id);
+CREATE INDEX idx_reviews_rating ON reviews (rating);
 
 -- 9. PHOTOS
 CREATE TABLE photos (
@@ -132,6 +150,9 @@ CREATE TABLE photos (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE INDEX idx_photos_facility ON photos (facility_id);
+CREATE INDEX idx_photos_user ON photos (user_id);
+
 -- 10. FACILITY REPORTS (Contributions)
 CREATE TABLE facility_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -139,10 +160,12 @@ CREATE TABLE facility_reports (
     facility_id UUID NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
     amenity_id UUID REFERENCES amenities(id),
     reported_value VARCHAR(100),
-    status VARCHAR(20) DEFAULT 'pending', -- pending, approved, rejected
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     points_awarded INT DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX idx_facility_reports_status ON facility_reports (status);
 
 -- 11. USER RANKINGS
 CREATE TABLE user_rankings (
@@ -160,7 +183,7 @@ CREATE TABLE user_rankings (
     photo_count INT DEFAULT 0,
     likes_received INT DEFAULT 0,
     
-    -- Combined
+    -- Combined (computed column)
     total_points INT GENERATED ALWAYS AS (explorer_points + social_points) STORED,
     
     -- Metadata
@@ -195,11 +218,17 @@ CREATE TABLE user_badges (
     UNIQUE(user_id, badge_id)
 );
 
--- RLS POLICIES
+-- ============================================================
+-- ROW LEVEL SECURITY
+-- ============================================================
+
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE facilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE photos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE visits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE facility_amenities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE facility_reports ENABLE ROW LEVEL SECURITY;
 
 -- Public Read Access
 CREATE POLICY "Facilities are viewable by everyone" ON facilities FOR SELECT USING (true);
@@ -207,14 +236,23 @@ CREATE POLICY "Reviews are viewable by everyone" ON reviews FOR SELECT USING (tr
 CREATE POLICY "Photos are viewable by everyone" ON photos FOR SELECT USING (true);
 CREATE POLICY "Amenities are viewable by everyone" ON amenities FOR SELECT USING (true);
 CREATE POLICY "Facility amenities are viewable by everyone" ON facility_amenities FOR SELECT USING (true);
+CREATE POLICY "User rankings are viewable by everyone" ON user_rankings FOR SELECT USING (true);
 
 -- User Write Access
+CREATE POLICY "Users can read own profile" ON users FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON users FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Users can create own reviews" ON reviews FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own reviews" ON reviews FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "Users can delete own reviews" ON reviews FOR DELETE USING (auth.uid() = user_id);
 CREATE POLICY "Users can upload photos" ON photos FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete own photos" ON photos FOR DELETE USING (auth.uid() = user_id);
+CREATE POLICY "Users can create visits" ON visits FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can view own visits" ON visits FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can create facility reports" ON facility_reports FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+-- ============================================================
 -- FUNCTIONS
+-- ============================================================
 
 -- Function: Get Facilities in Viewport
 CREATE OR REPLACE FUNCTION get_facilities_in_bounds(
@@ -257,7 +295,7 @@ BEGIN
     ORDER BY f.data_quality_score DESC
     LIMIT facility_limit;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Function: Update Rank Positions
 CREATE OR REPLACE FUNCTION update_rank_positions()
@@ -265,9 +303,9 @@ RETURNS void AS $$
 BEGIN
     WITH ranked AS (
         SELECT 
-            id,
-            ROW_NUMBER() OVER (ORDER BY total_points DESC) as new_rank
-        FROM user_rankings
+            ur.id,
+            ROW_NUMBER() OVER (ORDER BY ur.total_points DESC) as new_rank
+        FROM user_rankings ur
     )
     UPDATE user_rankings ur
     SET rank_position = r.new_rank
@@ -294,11 +332,15 @@ CREATE TRIGGER on_ranking_change
 CREATE OR REPLACE FUNCTION validate_review_content()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Sanitize content (basic example)
-    NEW.content = regexp_replace(NEW.content, '<[^>]*>', '', 'g');
+    -- Sanitize content: strip HTML tags
+    IF NEW.content IS NOT NULL THEN
+        NEW.content = regexp_replace(NEW.content, '<[^>]*>', '', 'g');
+    END IF;
     
-    -- Check for spam patterns (example)
-    IF NEW.content ~ '(http|www\.)' AND char_length(NEW.content) < 100 THEN
+    -- Check for spam patterns (short messages with URLs)
+    IF NEW.content IS NOT NULL
+       AND NEW.content ~ '(http|www\.)'
+       AND char_length(NEW.content) < 100 THEN
         RAISE EXCEPTION 'Potential spam detected';
     END IF;
     
@@ -310,3 +352,22 @@ CREATE TRIGGER check_review_content
     BEFORE INSERT OR UPDATE ON reviews
     FOR EACH ROW
     EXECUTE FUNCTION validate_review_content();
+
+-- Trigger: Auto-update updated_at on facilities
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER facilities_updated_at
+    BEFORE UPDATE ON facilities
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER reviews_updated_at
+    BEFORE UPDATE ON reviews
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();

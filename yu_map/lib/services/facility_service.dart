@@ -1,23 +1,66 @@
 // lib/services/facility_service.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yu_map/core/utils/query_utils.dart';
 import 'package:yu_map/domain/entities/facility.dart';
+
+/// Cache entry with expiration support.
+class _CacheEntry<T> {
+  final T value;
+  final DateTime expiresAt;
+
+  _CacheEntry(this.value, Duration ttl)
+      : expiresAt = DateTime.now().add(ttl);
+
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+}
 
 class FacilityService {
   final SupabaseClient _client;
 
   FacilityService(this._client);
 
-  // Cache for facilities to improve performance
-  final Map<String, dynamic> _cache = {};
-  
-  // Getter to access cache safely
-  Map<String, dynamic> get cache => Map.unmodifiable(_cache);
+  // LRU-style cache with TTL and size limit
+  static const int _maxCacheSize = 200;
+  static const Duration _cacheTtl = Duration(minutes: 10);
+  final Map<String, _CacheEntry<Map<String, dynamic>>> _cache = {};
+
+  /// Returns an unmodifiable view of current (non-expired) cache keys.
+  Map<String, Map<String, dynamic>> get cache {
+    _evictExpired();
+    return Map.unmodifiable(
+      _cache.map((key, entry) => MapEntry(key, entry.value)),
+    );
+  }
+
+  /// Removes expired entries from the cache.
+  void _evictExpired() {
+    _cache.removeWhere((_, entry) => entry.isExpired);
+  }
+
+  /// Ensures the cache does not exceed [_maxCacheSize].
+  /// Removes the oldest entries first when the limit is reached.
+  void _enforceCacheLimit() {
+    while (_cache.length > _maxCacheSize) {
+      _cache.remove(_cache.keys.first);
+    }
+  }
+
+  /// Adds a single entry to the cache with TTL and size enforcement.
+  void _cacheEntry(String key, Map<String, dynamic> value) {
+    _cache[key] = _CacheEntry(value, _cacheTtl);
+    _enforceCacheLimit();
+  }
+
+  /// Clears the entire cache.
+  void clearCache() {
+    _cache.clear();
+  }
 
   Future<List<Facility>> searchFacilities({
     String? searchQuery,
     String? prefectureId,
     String? facilityTypeId,
-    Map<String, bool>? attributes, // e.g., {'tattoo': true, 'sauna': true}
+    Map<String, bool>? attributes,
     double? latitude,
     double? longitude,
     double? radius,
@@ -27,19 +70,29 @@ class FacilityService {
         .select('''
           id, 
           name, 
+          name_kana,
+          google_place_id,
           latitude, 
           longitude, 
+          address,
+          phone,
+          website,
+          business_hours,
+          price_info,
+          data_source,
+          data_quality_score,
           prefecture_id, 
           facility_type_id,
           amenities
         ''');
 
-    // Apply search string if provided
+    // Apply search string with sanitized input
     if (searchQuery != null && searchQuery.isNotEmpty) {
-      query = query.ilike('name', '%$searchQuery%');
+      final sanitized = sanitizeLikeInput(searchQuery);
+      query = query.ilike('name', '%$sanitized%');
     }
 
-    // Apply location filters if provided (without discarding attribute filters)
+    // Apply location filters
     if (prefectureId != null) {
       query = query.eq('prefecture_id', prefectureId);
     }
@@ -48,58 +101,62 @@ class FacilityService {
       query = query.eq('facility_type_id', facilityTypeId);
     }
 
-    // Apply attribute filters (Tattoo, Sauna, etc.) - ensure they persist
+    // Apply attribute filters (Tattoo, Sauna, etc.)
     if (attributes != null) {
       for (final entry in attributes.entries) {
-        if (entry.value) { // Only apply if attribute is true
-          // For amenities stored as JSONB in Supabase
+        if (entry.value) {
           query = query.contains('amenities', {entry.key: true});
         }
       }
     }
 
-    // Apply geolocation filter if provided
+    // Apply geolocation bounding box filter
     if (latitude != null && longitude != null && radius != null) {
-      // Note: Actual geolocation filtering may require postgis functions
-      // This is a simplified version
-      query = query.lte('latitude', latitude + radius / 111.0)
-                  .gte('latitude', latitude - radius / 111.0)
-                  .lte('longitude', longitude + radius / (111.0 * 0.7)) // Approximate for Japan's latitude
-                  .gte('longitude', longitude - radius / (111.0 * 0.7));
+      query = query
+          .lte('latitude', latitude + radius / 111.0)
+          .gte('latitude', latitude - radius / 111.0)
+          .lte('longitude', longitude + radius / (111.0 * 0.7))
+          .gte('longitude', longitude - radius / (111.0 * 0.7));
     }
 
     final response = await query;
-    
-    // Update cache with results
-    _cache.clear(); // Clear old cache
+
+    // Update cache with results (additive, not destructive)
+    _evictExpired();
     for (final row in response) {
-      _cache[row['id']] = row;
+      final id = row['id'] as String?;
+      if (id != null) {
+        _cacheEntry(id, row);
+      }
     }
 
     return response.map((row) => Facility.fromJson(row)).toList();
   }
 
-  // Updated method that properly chains queries without reassignment
   Future<List<Facility>> getFilteredFacilities({
     String? searchTerm,
     Map<String, dynamic>? filters,
   }) async {
-    // Start with a base query
     var query = _client
         .from('facilities')
-        .select('id, name, latitude, longitude, prefecture_id, facility_type_id, amenities');
+        .select('''
+          id, name, name_kana, google_place_id,
+          latitude, longitude, address, phone, website,
+          business_hours, price_info, data_source, data_quality_score,
+          prefecture_id, facility_type_id, amenities
+        ''');
 
-    // Apply search term if provided
+    // Apply search term with sanitized input
     if (searchTerm != null && searchTerm.trim().isNotEmpty) {
-      query = query.ilike('name', '%$searchTerm%');
+      final sanitized = sanitizeLikeInput(searchTerm.trim());
+      query = query.ilike('name', '%$sanitized%');
     }
 
-    // Apply filters conditionally - this ensures all filters are maintained
+    // Apply filters conditionally
     if (filters != null) {
       for (final entry in filters.entries) {
         if (entry.value != null) {
           if (entry.key == 'amenities') {
-            // For amenity filters, use the correct Supabase syntax
             if (entry.value is Map<String, bool>) {
               final amenityFilters = entry.value as Map<String, bool>;
               for (final amenityEntry in amenityFilters.entries) {
@@ -119,19 +176,30 @@ class FacilityService {
     return response.map((row) => Facility.fromJson(row)).toList();
   }
 
-  // Simplified redundant null coalescing (fixed)
   Future<Facility?> getFacilityById(String id) async {
-    if (_cache.containsKey(id)) {
-      return Facility.fromJson(_cache[id]);
+    // Check cache first (with TTL validation)
+    final cached = _cache[id];
+    if (cached != null && !cached.isExpired) {
+      return Facility.fromJson(cached.value);
+    }
+
+    // Remove expired entry if present
+    if (cached != null) {
+      _cache.remove(id);
     }
 
     final response = await _client
         .from('facilities')
-        .select('id, name, latitude, longitude, prefecture_id, facility_type_id, amenities')
+        .select('''
+          id, name, name_kana, google_place_id,
+          latitude, longitude, address, phone, website,
+          business_hours, price_info, data_source, data_quality_score,
+          prefecture_id, facility_type_id, amenities
+        ''')
         .eq('id', id)
         .single();
 
-    _cache[id] = response;
+    _cacheEntry(id, response);
     return Facility.fromJson(response);
   }
 }

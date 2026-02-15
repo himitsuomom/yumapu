@@ -16,7 +16,7 @@ class UserRanking extends Equatable {
     this.explorerPoints = 0,
     this.socialPoints = 0,
     this.totalPoints = 0,
-    this.currentTitle = '湯めぐり初心者',
+    this.currentTitle = '\u6e6f\u3081\u3050\u308a\u521d\u5fc3\u8005',
     this.rankPosition,
   });
 
@@ -27,8 +27,40 @@ class UserRanking extends Equatable {
       explorerPoints: json['explorer_points'] as int? ?? 0,
       socialPoints: json['social_points'] as int? ?? 0,
       totalPoints: json['total_points'] as int? ?? 0,
-      currentTitle: json['current_title'] as String? ?? '湯めぐり初心者',
+      currentTitle: json['current_title'] as String? ?? '\u6e6f\u3081\u3050\u308a\u521d\u5fc3\u8005',
       rankPosition: json['rank_position'] as int?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'explorer_points': explorerPoints,
+      'social_points': socialPoints,
+      'total_points': totalPoints,
+      'current_title': currentTitle,
+      'rank_position': rankPosition,
+    };
+  }
+
+  UserRanking copyWith({
+    String? id,
+    String? userId,
+    int? explorerPoints,
+    int? socialPoints,
+    int? totalPoints,
+    String? currentTitle,
+    int? rankPosition,
+  }) {
+    return UserRanking(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      explorerPoints: explorerPoints ?? this.explorerPoints,
+      socialPoints: socialPoints ?? this.socialPoints,
+      totalPoints: totalPoints ?? this.totalPoints,
+      currentTitle: currentTitle ?? this.currentTitle,
+      rankPosition: rankPosition ?? this.rankPosition,
     );
   }
 

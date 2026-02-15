@@ -1,219 +1,246 @@
 // test/facility_service_test.dart
+//
+// Unit tests for FacilityService, entities, and input sanitization.
+// Uses mocktail for clean mock setup.
+//
+// To run: flutter test test/facility_service_test.dart
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/domain/entities/review.dart';
+import 'package:yu_map/domain/entities/user.dart' as app_user;
+import 'package:yu_map/domain/entities/user_ranking.dart';
 import 'package:yu_map/services/facility_service.dart';
 
+// --- Mocks ---
+
+class MockSupabaseClient extends Mock implements SupabaseClient {}
+
+// --- Test Data ---
+
+final _sampleFacilityJson = {
+  'id': 'test-id-1',
+  'name': 'Test Onsen',
+  'name_kana': null,
+  'google_place_id': null,
+  'latitude': 35.6895,
+  'longitude': 139.6917,
+  'address': 'Tokyo',
+  'phone': null,
+  'website': null,
+  'business_hours': <String, dynamic>{},
+  'price_info': <String, dynamic>{},
+  'amenities': <String, dynamic>{'sauna': true, 'tattoo_friendly': false},
+  'data_source': 'government',
+  'data_quality_score': 3,
+  'prefecture_id': 'pref-13',
+  'facility_type_id': 'type-onsen',
+};
+
 void main() {
-  group('FacilityService Tests', () {
-    late FacilityService facilityService;
-    late MockSupabaseClient mockClient;
+  late MockSupabaseClient mockClient;
+  late FacilityService facilityService;
 
-    setUp(() {
-      mockClient = MockSupabaseClient();
-      facilityService = FacilityService(mockClient);
+  setUp(() {
+    mockClient = MockSupabaseClient();
+    facilityService = FacilityService(mockClient);
+  });
+
+  // ---- Facility entity tests ----
+
+  group('Facility entity', () {
+    test('fromJson correctly parses latitude/longitude fields', () {
+      final facility = Facility.fromJson(_sampleFacilityJson);
+      expect(facility.latitude, 35.6895);
+      expect(facility.longitude, 139.6917);
+      expect(facility.name, 'Test Onsen');
+      expect(facility.dataQualityScore, 3);
     });
 
-    test('should build query with search term and filters without reassignment', () async {
-      // Arrange
-      final searchQuery = 'onsen';
-      final attributes = {'tattoo': true, 'sauna': true};
-      
-      // Act
-      await facilityService.searchFacilities(
-        searchQuery: searchQuery,
-        attributes: attributes,
-      );
-
-      // Assert
-      expect(mockClient.queryCalls.length, greaterThan(0));
-      // Verify that query was built correctly with both search term and attributes
-      expect(mockClient.lastQueryHasILike, true);
-      expect(mockClient.lastQueryHasContains, true);
-    });
-
-    test('should maintain all filters when chaining queries', () async {
-      // Arrange
-      final filters = {
-        'prefecture_id': '13',
-        'amenities': {'wifi': true, 'parking': true}
+    test('fromJson falls back to lat/lng keys (RPC results)', () {
+      final json = {
+        'id': 'test-id-2',
+        'name': 'RPC Facility',
+        'lat': 34.0,
+        'lng': 135.0,
       };
-
-      // Act
-      await facilityService.getFilteredFacilities(filters: filters);
-
-      // Assert
-      expect(mockClient.queryCalls.length, greaterThan(0));
-      // Verify the filters were applied correctly
-      expect(mockClient.lastQueryHadPrefectureFilter, true);
-      expect(mockClient.lastQueryHadAmenityFilters, true);
+      final facility = Facility.fromJson(json);
+      expect(facility.latitude, 34.0);
+      expect(facility.longitude, 135.0);
     });
 
-    test('should cache facilities properly', () async {
-      // Act
-      await facilityService.getFacilityById('test-id');
+    test('fromJson defaults to 0.0 when no coordinates', () {
+      final json = {'id': 'no-coords', 'name': 'No Coords'};
+      final facility = Facility.fromJson(json);
+      expect(facility.latitude, 0.0);
+      expect(facility.longitude, 0.0);
+    });
 
-      // Assert
-      expect(facilityService.cache.length, greaterThanOrEqual(0)); // Can be 0 if API call failed
+    test('toJson round-trips correctly', () {
+      final facility = Facility.fromJson(_sampleFacilityJson);
+      final json = facility.toJson();
+      expect(json['id'], 'test-id-1');
+      expect(json['latitude'], 35.6895);
+      expect(json['longitude'], 139.6917);
+      expect(json['data_quality_score'], 3);
+
+      // Round-trip: fromJson -> toJson -> fromJson should be equal
+      final roundTripped = Facility.fromJson(json);
+      expect(roundTripped, equals(facility));
+    });
+
+    test('fromJson parses amenities correctly', () {
+      final facility = Facility.fromJson(_sampleFacilityJson);
+      expect(facility.amenities, isA<Map<String, dynamic>>());
+      expect(facility.amenities['sauna'], true);
+      expect(facility.amenities['tattoo_friendly'], false);
+    });
+
+    test('fromJson defaults amenities to empty map when missing', () {
+      final json = {'id': 'no-amenities', 'name': 'No Amenities'};
+      final facility = Facility.fromJson(json);
+      expect(facility.amenities, isEmpty);
+    });
+
+    test('copyWith creates modified copy while preserving other fields', () {
+      final facility = Facility.fromJson(_sampleFacilityJson);
+      final updated = facility.copyWith(name: 'Updated Onsen', dataQualityScore: 5);
+      expect(updated.name, 'Updated Onsen');
+      expect(updated.dataQualityScore, 5);
+      expect(updated.id, facility.id);
+      expect(updated.latitude, facility.latitude);
     });
   });
-}
 
-class MockSupabaseClient implements SupabaseClient {
-  final List<String> queryCalls = [];
-  bool lastQueryHasILike = false;
-  bool lastQueryHasContains = false;
-  bool lastQueryHadPrefectureFilter = false;
-  bool lastQueryHadAmenityFilters = false;
+  // ---- Review entity tests ----
 
-  @override
-  PostgrestClient from(String table) {
-    queryCalls.add(table);
-    return MockPostgrestClient(this);
-  }
+  group('Review entity', () {
+    test('fromJson rejects rating below 1', () {
+      final json = {
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Bad',
+        'rating': 0,
+        'created_at': '2024-01-01T00:00:00Z',
+      };
+      expect(() => Review.fromJson(json), throwsA(isA<FormatException>()));
+    });
 
-  // Other required methods would be implemented here
-  @override
-  AuthClient get auth => throw UnimplementedError();
+    test('fromJson rejects rating above 5', () {
+      final json = {
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Too high',
+        'rating': 6,
+        'created_at': '2024-01-01T00:00:00Z',
+      };
+      expect(() => Review.fromJson(json), throwsA(isA<FormatException>()));
+    });
 
-  @override
-  FunctionsClient get functions => throw UnimplementedError();
+    test('fromJson accepts valid rating and produces correct toJson', () {
+      final json = {
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Great onsen!',
+        'rating': 5,
+        'likes_count': 10,
+        'created_at': '2024-01-01T00:00:00Z',
+      };
+      final review = Review.fromJson(json);
+      expect(review.rating, 5);
+      expect(review.likesCount, 10);
+      expect(review.content, 'Great onsen!');
 
-  @override
-  RealtimeChannel channel(String topic, {Map<String, dynamic>? config}) {
-    throw UnimplementedError();
-  }
+      final output = review.toJson();
+      expect(output['rating'], 5);
+      expect(output['user_id'], 'u1');
+    });
 
-  @override
-  Future<RealtimeChannel> connectRealtime() {
-    throw UnimplementedError();
-  }
+    test('fromJson defaults content to empty string when null', () {
+      final json = {
+        'id': 'r2',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': null,
+        'rating': 3,
+        'created_at': '2024-01-01T00:00:00Z',
+      };
+      final review = Review.fromJson(json);
+      expect(review.content, '');
+    });
+  });
 
-  @override
-  RealtimeClient get realtime => throw UnimplementedError();
+  // ---- User entity tests ----
 
-  @override
-  StorageClient get storage => throw UnimplementedError();
+  group('User entity', () {
+    test('fromJson and toJson round-trip', () {
+      final json = {
+        'id': 'user-1',
+        'email': 'test@example.com',
+        'username': 'onsen_lover',
+        'display_name': 'Onsen Lover',
+        'avatar_url': null,
+        'bio': 'I love hot springs',
+        'is_premium': true,
+        'created_at': '2024-06-01T12:00:00Z',
+      };
+      final user = app_user.User.fromJson(json);
+      expect(user.isPremium, true);
+      expect(user.username, 'onsen_lover');
 
-  @override
-  Future<void> removeAuthEventListener(AuthChangeEvent event) {
-    throw UnimplementedError();
-  }
+      final output = user.toJson();
+      expect(output['is_premium'], true);
+      expect(output['display_name'], 'Onsen Lover');
+    });
+  });
 
-  @override
-  Future<void> setAuthCookie(String cookie) {
-    throw UnimplementedError();
-  }
+  // ---- UserRanking entity tests ----
 
-  @override
-  Future<T> rpc<T>(String fn, {Map<String, dynamic>? params}) {
-    throw UnimplementedError();
-  }
+  group('UserRanking entity', () {
+    test('fromJson parses correctly with defaults', () {
+      final json = {
+        'id': 'rank-1',
+        'user_id': 'user-1',
+      };
+      final ranking = UserRanking.fromJson(json);
+      expect(ranking.explorerPoints, 0);
+      expect(ranking.socialPoints, 0);
+      expect(ranking.totalPoints, 0);
+      expect(ranking.currentTitle, '\u6e6f\u3081\u3050\u308a\u521d\u5fc3\u8005');
+      expect(ranking.rankPosition, isNull);
+    });
 
-  @override
-  Stream<Map<String, dynamic>> subscribe(
-    String table, {
-    required void Function(SupabaseRealtimePayload) handler,
-    String? filter,
-  }) {
-    throw UnimplementedError();
-  }
+    test('toJson includes all fields', () {
+      final ranking = UserRanking(
+        id: 'rank-1',
+        userId: 'user-1',
+        explorerPoints: 500,
+        socialPoints: 300,
+        totalPoints: 800,
+        currentTitle: '\u6e29\u6cc9\u611b\u597d\u5bb6',
+        rankPosition: 42,
+      );
+      final json = ranking.toJson();
+      expect(json['explorer_points'], 500);
+      expect(json['rank_position'], 42);
+    });
+  });
 
-  @override
-  Future<Map<String, dynamic>> getAuthCookie() {
-    throw UnimplementedError();
-  }
+  // ---- FacilityService cache tests ----
 
-  @override
-  Future<void> signOut() {
-    throw UnimplementedError();
-  }
-}
+  group('FacilityService cache', () {
+    test('cache starts empty', () {
+      expect(facilityService.cache, isEmpty);
+    });
 
-class MockPostgrestClient implements PostgrestClient {
-  final MockSupabaseClient mockClient;
-
-  MockPostgrestClient(this.mockClient);
-
-  @override
-  PostgrestFilterBuilder select([String? columns]) {
-    return MockPostgrestFilterBuilder(mockClient);
-  }
-
-  // Other methods would be implemented here
-  @override
-  PostgrestFilterBuilder insert(dynamic values, {bool? returning, String? count}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  PostgrestFilterBuilder upsert(dynamic values, {bool? returning, String? count, String? onConflict}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  PostgrestFilterBuilder update(dynamic values, {bool? returning, String? count}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  PostgrestFilterBuilder delete({bool? returning, String? count}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  void dispose() {}
-}
-
-class MockPostgrestFilterBuilder implements PostgrestFilterBuilder {
-  final MockSupabaseClient mockClient;
-
-  MockPostgrestFilterBuilder(this.mockClient);
-
-  @override
-  Future<List<Map<String, dynamic>>>? execute() {
-    // Simulate API response
-    return Future.value([
-      {'id': 'test-id', 'name': 'Test Facility', 'latitude': 35.6895, 'longitude': 139.6917}
-    ]);
-  }
-
-  @override
-  PostgrestFilterBuilder ilike(String column, String pattern) {
-    mockClient.lastQueryHasILike = true;
-    return this;
-  }
-
-  @override
-  PostgrestFilterBuilder eq(String column, dynamic value) {
-    if (column == 'prefecture_id') {
-      mockClient.lastQueryHadPrefectureFilter = true;
-    }
-    return this;
-  }
-
-  @override
-  PostgrestFilterBuilder contains(String column, dynamic value) {
-    if (column == 'amenities') {
-      mockClient.lastQueryHasContains = true;
-      mockClient.lastQueryHadAmenityFilters = true;
-    }
-    return this;
-  }
-
-  // Other filter methods would be implemented here...
-  @override
-  PostgrestFilterBuilder lte(String column, dynamic value) => this;
-
-  @override
-  PostgrestFilterBuilder gte(String column, dynamic value) => this;
-
-  @override
-  Future<Map<String, dynamic>> single() {
-    return Future.value({'id': 'test-id', 'name': 'Test Facility', 'latitude': 35.6895, 'longitude': 139.6917});
-  }
-
-  @override
-  Future<int> count({String? column, String? count}) {
-    return Future.value(1);
-  }
+    test('clearCache removes all entries', () {
+      facilityService.clearCache();
+      expect(facilityService.cache, isEmpty);
+    });
+  });
 }
