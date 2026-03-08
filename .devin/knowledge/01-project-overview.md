@@ -24,17 +24,23 @@ Yu-Map (湯マップ) is a Flutter mobile app for discovering, reviewing, and tr
 5. Contribute and verify facility amenity data.
 6. Access premium features via in-app subscription.
 
-## Sensitive Areas
+## Approval-Gated Areas
 
-Treat these as high-risk and approval-gated:
+These require explicit user approval before implementation (matches `AGENTS.md`):
+
 1. Database schema changes (tables, RLS policies, functions, migrations)
-2. Auth or permission changes (RLS policies, `users` table)
+2. Auth or permission changes
 3. RevenueCat subscription or entitlement behavior
 4. New external integrations or API keys
-5. Edge function behavior changes (ranking calculation, contribution verification)
+5. Edge function behavior changes (ranking, contribution verification)
 6. Breaking API changes
 7. Production-impacting operations
-8. User data handling (reviews, visits, photos, personal info)
+
+## Handle With Care
+
+These are sensitive and require caution, but do not require stopping for approval on every touch:
+- User data (reviews, visits, photos, personal info) — avoid exposing in logs, errors, or PR summaries.
+- RLS policy scope — see `05-security-secrets.md` for details.
 
 ## Monorepo Layout
 
