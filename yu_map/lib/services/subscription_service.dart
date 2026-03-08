@@ -1,65 +1,55 @@
 // lib/services/subscription_service.dart
-import 'dart:async';
 import 'dart:io';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:yu_map/core/config/app_config.dart';
 
 class SubscriptionService {
   static const String _premiumEntitlement = 'premium';
-  StreamSubscription<CustomerInfo>? _customerInfoSubscription;
 
   Future<void> initialize() async {
+    if (!AppConfig.isRevenueCatConfigured) return;
+
     await Purchases.setLogLevel(LogLevel.debug);
 
-    PurchasesConfiguration configuration;
-    if (Platform.isAndroid) {
-      configuration = PurchasesConfiguration('revenuecat_android_key');
-    } else {
-      configuration = PurchasesConfiguration('revenuecat_ios_key');
-    }
+    final apiKey = Platform.isAndroid
+        ? AppConfig.revenueCatKeyAndroid
+        : AppConfig.revenueCatKeyIos;
 
+    final configuration = PurchasesConfiguration(apiKey);
     await Purchases.configure(configuration);
   }
 
   Future<bool> isPremiumUser() async {
+    if (!AppConfig.isRevenueCatConfigured) return false;
     try {
       final customerInfo = await Purchases.getCustomerInfo();
-      return customerInfo.entitlements.all[_premiumEntitlement]?.isActive ?? false;
+      return customerInfo.entitlements.all[_premiumEntitlement]?.isActive ??
+          false;
     } catch (e) {
       return false;
     }
   }
 
   Future<void> purchasePremium() async {
+    if (!AppConfig.isRevenueCatConfigured) return;
     try {
       final offerings = await Purchases.getOfferings();
       final package = offerings.current?.monthly;
-
       if (package != null) {
         await Purchases.purchasePackage(package);
       }
-    } catch (e) {
-      // Handle error
+    } catch (_) {
+      // Purchase cancelled or failed — handled by caller.
     }
   }
 
-  // Properly assign listener to _customerInfoSubscription field to prevent memory leaks
+  /// Listen for premium status changes via RevenueCat listener callback.
   void listenToPremiumStatus(void Function(bool) callback) {
-    _customerInfoSubscription = Purchases.customerInfoStream.listen(
-      (info) {
-        callback(info.entitlements.all[_premiumEntitlement]?.isActive ?? false);
-      },
-    );
-  }
-
-  Stream<bool> get premiumStatusStream {
-    return Purchases.customerInfoStream.map(
-      (info) => info.entitlements.all[_premiumEntitlement]?.isActive ?? false,
-    );
-  }
-
-  // Dispose the subscription to prevent memory leaks
-  void dispose() {
-    _customerInfoSubscription?.cancel();
-    _customerInfoSubscription = null;
+    if (!AppConfig.isRevenueCatConfigured) return;
+    Purchases.addCustomerInfoUpdateListener((info) {
+      callback(
+        info.entitlements.all[_premiumEntitlement]?.isActive ?? false,
+      );
+    });
   }
 }
