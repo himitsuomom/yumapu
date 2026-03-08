@@ -64,7 +64,7 @@ class FacilityDetailScreen extends ConsumerWidget {
                     myLocationEnabled: false,
                     zoomControlsEnabled: false,
                     scrollGesturesEnabled: false,
-                    liteModeEnabled: true,
+                    // liteModeEnabled is Android-only; omitted for cross-platform safety.
                   ),
                 ),
                 actions: [

@@ -6,6 +6,7 @@ import 'package:yu_map/providers/auth_provider.dart';
 final facilityReviewsProvider =
     FutureProvider.family<List<Review>, String>((ref, facilityId) async {
   final client = ref.read(supabaseClientProvider);
+  if (client == null) return [];
   final data = await client
       .from('reviews')
       .select()
@@ -27,6 +28,10 @@ class ReviewSubmitNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       final client = _ref.read(supabaseClientProvider);
+      if (client == null) {
+        state = AsyncError('バックエンド未設定です', StackTrace.current);
+        return false;
+      }
       final userId = client.auth.currentUser?.id;
       if (userId == null) {
         state = AsyncError('ログインが必要です', StackTrace.current);

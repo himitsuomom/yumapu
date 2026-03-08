@@ -1,20 +1,27 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/domain/entities/user.dart' as app;
 
 /// Exposes the Supabase client instance.
-final supabaseClientProvider = Provider<SupabaseClient>((ref) {
+/// Returns null-safe: only usable when Supabase is configured.
+final supabaseClientProvider = Provider<SupabaseClient?>((ref) {
+  if (!AppConfig.isSupabaseConfigured) return null;
   return Supabase.instance.client;
 });
 
 /// Auth state stream from Supabase.
 final authStateProvider = StreamProvider<AuthState>((ref) {
-  return Supabase.instance.client.auth.onAuthStateChange;
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return const Stream.empty();
+  return client.auth.onAuthStateChange;
 });
 
 /// Current Supabase session (nullable).
 final sessionProvider = Provider<Session?>((ref) {
-  return Supabase.instance.client.auth.currentSession;
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return null;
+  return client.auth.currentSession;
 });
 
 /// Whether the user is currently signed in.
@@ -29,6 +36,7 @@ final currentUserProfileProvider =
   if (session == null) return null;
 
   final client = ref.read(supabaseClientProvider);
+  if (client == null) return null;
   try {
     final data = await client
         .from('users')
@@ -90,5 +98,9 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
 
 final authNotifierProvider =
     StateNotifierProvider<AuthNotifier, AsyncValue<void>>((ref) {
-  return AuthNotifier(ref.read(supabaseClientProvider));
+  final client = ref.read(supabaseClientProvider);
+  if (client == null) {
+    throw StateError('Supabase is not configured. Provide SUPABASE_URL and SUPABASE_ANON_KEY via --dart-define.');
+  }
+  return AuthNotifier(client);
 });

@@ -1,4 +1,4 @@
-package com.yumap.yu_map
+package com.yumap.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -31,6 +31,7 @@ final userVisitsProvider =
   final session = ref.watch(sessionProvider);
   if (session == null) return [];
   final client = ref.read(supabaseClientProvider);
+  if (client == null) return [];
   final data = await client
       .from('visits')
       .select()
@@ -60,6 +61,10 @@ class CheckInNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       final client = _ref.read(supabaseClientProvider);
+      if (client == null) {
+        state = AsyncError('バックエンド未設定です', StackTrace.current);
+        return false;
+      }
       await client.from('visits').insert({
         'user_id': session.user.id,
         'facility_id': facilityId,

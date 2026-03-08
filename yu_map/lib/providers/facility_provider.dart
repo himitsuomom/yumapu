@@ -4,8 +4,13 @@ import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/services/facility_service.dart';
 
 /// Facility service singleton.
+/// Throws if Supabase is not configured.
 final facilityServiceProvider = Provider<FacilityService>((ref) {
-  return FacilityService(ref.read(supabaseClientProvider));
+  final client = ref.read(supabaseClientProvider);
+  if (client == null) {
+    throw StateError('Supabase is not configured.');
+  }
+  return FacilityService(client);
 });
 
 /// Search state for facilities.

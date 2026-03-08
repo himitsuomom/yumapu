@@ -17,6 +17,10 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
     state = const AsyncLoading();
     try {
       final client = _ref.read(supabaseClientProvider);
+      if (client == null) {
+        state = const AsyncData({});
+        return;
+      }
       final data = await client
           .from('favorites')
           .select('facility_id')
@@ -34,6 +38,7 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
     final session = _ref.read(sessionProvider);
     if (session == null) return;
     final client = _ref.read(supabaseClientProvider);
+    if (client == null) return;
     final current = state.valueOrNull ?? {};
 
     if (current.contains(facilityId)) {
@@ -78,6 +83,7 @@ final favoriteFacilitiesProvider =
   final favIds = ref.watch(favoritesProvider).valueOrNull ?? {};
   if (favIds.isEmpty) return [];
   final client = ref.read(supabaseClientProvider);
+  if (client == null) return [];
   final data = await client
       .from('facilities')
       .select()
