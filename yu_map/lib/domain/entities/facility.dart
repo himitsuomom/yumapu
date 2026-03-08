@@ -46,8 +46,12 @@ class Facility extends Equatable {
       googlePlaceId: json['google_place_id'] as String?,
       prefectureId: json['prefecture_id'] as String?,
       facilityTypeId: json['facility_type_id'] as String?,
-      latitude: (json['lat'] as num?)?.toDouble() ?? 0.0,
-      longitude: (json['lng'] as num?)?.toDouble() ?? 0.0,
+      latitude: (json['latitude'] as num?)?.toDouble() ??
+          (json['lat'] as num?)?.toDouble() ??
+          0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ??
+          (json['lng'] as num?)?.toDouble() ??
+          0.0,
       address: json['address'] as String?,
       phone: json['phone'] as String?,
       website: json['website'] as String?,
