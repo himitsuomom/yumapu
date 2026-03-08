@@ -3,16 +3,24 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:yu_map/core/config/app_config.dart';
 
 class AdService {
   RewardedAd? _rewardedAd;
-  BannerAd? _bannerAd;
+
+  /// Banner ad unit ID for the current platform.
+  static String get bannerAdUnitId => Platform.isAndroid
+      ? AppConfig.adMobBannerIdAndroid
+      : AppConfig.adMobBannerIdIos;
+
+  /// Rewarded ad unit ID for the current platform.
+  static String get rewardedAdUnitId => Platform.isAndroid
+      ? AppConfig.adMobRewardedIdAndroid
+      : AppConfig.adMobRewardedIdIos;
 
   Future<void> loadRewardedAd() async {
     await RewardedAd.load(
-      adUnitId: Platform.isAndroid 
-          ? 'ca-app-pub-3940256099942544/5224354917' // Test ID
-          : 'ca-app-pub-3940256099942544/1712485313', // Test ID
+      adUnitId: rewardedAdUnitId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) => _rewardedAd = ad,
@@ -24,7 +32,7 @@ class AdService {
     );
   }
 
-  Future<bool> showVideoAdForFacility(String facilityId) async {
+  Future<bool> showRewardedAd() async {
     if (_rewardedAd == null) {
       debugPrint('Warning: Ad attempted to show before loading');
       return false;
@@ -46,15 +54,10 @@ class AdService {
 
     await _rewardedAd!.show(
       onUserEarnedReward: (ad, reward) {
-        // Log reward if needed
+        // Reward earned — caller handles the reward logic.
       },
     );
 
     return completer.future;
-  }
-
-  Widget buildBannerAd() {
-    // Placeholder - banner ads usually require instantiation within widget tree state
-    return const SizedBox(height: 50, child: Center(child: Text("Banner Ad")));
   }
 }

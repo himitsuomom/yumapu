@@ -98,7 +98,7 @@ class ProfileScreen extends ConsumerWidget {
                   children: visits.take(5).map((visit) {
                     return ListTile(
                       leading: const Icon(Icons.check_circle, color: Colors.green),
-                      title: Text(visit.facilityId),
+                      title: Text(visit.facilityName ?? visit.facilityId),
                       subtitle: Text(
                         '${visit.visitedAt.year}/${visit.visitedAt.month}/${visit.visitedAt.day}',
                       ),

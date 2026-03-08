@@ -12,6 +12,7 @@ import 'package:yu_map/providers/review_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
 import 'package:yu_map/features/reviews/screens/write_review_screen.dart';
 import 'package:yu_map/features/facility/widgets/review_card.dart';
+import 'package:yu_map/core/widgets/banner_ad_widget.dart';
 
 class FacilityDetailScreen extends ConsumerWidget {
   const FacilityDetailScreen({super.key, required this.facilityId});
@@ -159,6 +160,14 @@ class FacilityDetailScreen extends ConsumerWidget {
                     ),
                   );
                 },
+              ),
+
+              // Banner ad
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Center(child: BannerAdWidget()),
+                ),
               ),
 
               // Bottom padding

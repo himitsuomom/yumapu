@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/providers/subscription_provider.dart';
 import 'package:yu_map/features/auth/screens/login_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -13,6 +14,11 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
+          // Premium section
+          _sectionHeader(context, 'プレミアム'),
+          _PremiumTile(),
+          const Divider(),
+
           // Account section
           _sectionHeader(context, 'アカウント'),
           ListTile(
@@ -119,6 +125,55 @@ class SettingsScreen extends ConsumerWidget {
               fontWeight: FontWeight.bold,
             ),
       ),
+    );
+  }
+}
+
+/// Premium subscription tile — shows current status and upgrade option.
+class _PremiumTile extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final premiumAsync = ref.watch(isPremiumProvider);
+
+    return premiumAsync.when(
+      loading: () => const ListTile(
+        leading: Icon(Icons.workspace_premium),
+        title: Text('プレミアム'),
+        subtitle: Text('読み込み中...'),
+      ),
+      error: (_, __) => ListTile(
+        leading: const Icon(Icons.workspace_premium),
+        title: const Text('プレミアム'),
+        subtitle: const Text('広告なし・全機能利用可能'),
+        trailing: ElevatedButton(
+          onPressed: () async {
+            await ref.read(subscriptionServiceProvider).purchasePremium();
+            ref.invalidate(isPremiumProvider);
+          },
+          child: const Text('アップグレード'),
+        ),
+      ),
+      data: (isPremium) {
+        if (isPremium) {
+          return const ListTile(
+            leading: Icon(Icons.workspace_premium, color: Colors.amber),
+            title: Text('プレミアム会員'),
+            subtitle: Text('ご利用ありがとうございます'),
+          );
+        }
+        return ListTile(
+          leading: const Icon(Icons.workspace_premium),
+          title: const Text('プレミアム'),
+          subtitle: const Text('広告なし・全機能利用可能'),
+          trailing: ElevatedButton(
+            onPressed: () async {
+              await ref.read(subscriptionServiceProvider).purchasePremium();
+              ref.invalidate(isPremiumProvider);
+            },
+            child: const Text('アップグレード'),
+          ),
+        );
+      },
     );
   }
 }

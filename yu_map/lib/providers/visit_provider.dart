@@ -7,20 +7,31 @@ class Visit {
   final String facilityId;
   final String userId;
   final DateTime visitedAt;
+  /// Facility name joined from the facilities table (may be null if join fails).
+  final String? facilityName;
 
   const Visit({
     required this.id,
     required this.facilityId,
     required this.userId,
     required this.visitedAt,
+    this.facilityName,
   });
 
   factory Visit.fromJson(Map<String, dynamic> json) {
+    // The facility name comes from a joined select:
+    //   select('*, facilities(name)')
+    final facilitiesJoin = json['facilities'];
+    String? name;
+    if (facilitiesJoin is Map<String, dynamic>) {
+      name = facilitiesJoin['name'] as String?;
+    }
     return Visit(
       id: json['id'] as String,
       facilityId: json['facility_id'] as String,
       userId: json['user_id'] as String,
       visitedAt: DateTime.parse(json['visited_at'] as String),
+      facilityName: name,
     );
   }
 }
@@ -34,7 +45,7 @@ final userVisitsProvider =
   if (client == null) return [];
   final data = await client
       .from('visits')
-      .select()
+      .select('*, facilities(name)')
       .eq('user_id', session.user.id)
       .order('visited_at', ascending: false);
   return (data as List).map((r) => Visit.fromJson(r)).toList();
