@@ -1,59 +1,91 @@
 // lib/services/analytics_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
+/// Thin wrapper around Firebase Analytics.
+///
+/// All methods are safe to call even when Firebase is not initialised —
+/// they catch exceptions and log warnings in debug mode.
 class AnalyticsService {
-  final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
+  AnalyticsService._();
+  static final AnalyticsService instance = AnalyticsService._();
+
+  FirebaseAnalytics? _analytics;
+  bool _initialised = false;
+
+  /// Call once at app start.  If Firebase is not configured the service
+  /// stays in a no-op state so the rest of the app never has to check.
+  void initialise() {
+    try {
+      _analytics = FirebaseAnalytics.instance;
+      _initialised = true;
+    } catch (e) {
+      debugPrint('AnalyticsService: Firebase not available — analytics disabled ($e)');
+    }
+  }
+
+  // ── Core events ────────────────────────────────────────────────────
+
+  Future<void> logAppOpen() => _log('app_open');
+
+  Future<void> logLogin({String method = 'email'}) =>
+      _log('login', {'method': method});
+
+  Future<void> logSignUp({String method = 'email'}) =>
+      _log('sign_up', {'method': method});
 
   Future<void> logScreenView(String screenName) async {
-    await _analytics.logScreenView(screenName: screenName);
+    if (!_initialised) return;
+    try {
+      await _analytics!.logScreenView(screenName: screenName);
+    } catch (e) {
+      debugPrint('AnalyticsService: logScreenView failed ($e)');
+    }
   }
+
+  Future<void> logSearch(String query) =>
+      _log('search', {'search_term': query});
 
   Future<void> logFacilityView({
     required String facilityId,
     required String facilityName,
-    required String facilityType,
-    required Duration viewDuration,
-  }) async {
-    await _analytics.logEvent(
-      name: 'facility_view',
-      parameters: {
+  }) =>
+      _log('facility_view', {
         'facility_id': facilityId,
         'facility_name': facilityName,
-        'facility_type': facilityType,
-        'view_duration_seconds': viewDuration.inSeconds,
-      },
-    );
-  }
-
-  Future<void> logAdWatch({
-    required String facilityId,
-    required bool completed,
-    required int watchDurationSeconds,
-  }) async {
-    await _analytics.logEvent(
-      name: 'ad_watch',
-      parameters: {
-        'facility_id': facilityId,
-        'completed': completed ? 1 : 0,
-        'duration_seconds': watchDurationSeconds,
-      },
-    );
-  }
+      });
 
   Future<void> logReviewSubmit({
     required String facilityId,
     required int rating,
     required int contentLength,
-    required int photoCount,
-  }) async {
-    await _analytics.logEvent(
-      name: 'review_submit',
-      parameters: {
+  }) =>
+      _log('review_submit', {
         'facility_id': facilityId,
         'rating': rating,
         'content_length': contentLength,
-        'photo_count': photoCount,
-      },
-    );
+      });
+
+  Future<void> logFavoriteToggle({
+    required String facilityId,
+    required bool added,
+  }) =>
+      _log('favorite_toggle', {
+        'facility_id': facilityId,
+        'action': added ? 'add' : 'remove',
+      });
+
+  Future<void> logCheckIn({required String facilityId}) =>
+      _log('check_in', {'facility_id': facilityId});
+
+  // ── Internal ───────────────────────────────────────────────────────
+
+  Future<void> _log(String name, [Map<String, Object>? params]) async {
+    if (!_initialised) return;
+    try {
+      await _analytics!.logEvent(name: name, parameters: params);
+    } catch (e) {
+      debugPrint('AnalyticsService: $name failed ($e)');
+    }
   }
 }

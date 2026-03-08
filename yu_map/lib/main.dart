@@ -7,6 +7,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/app.dart';
+import 'package:yu_map/services/analytics_service.dart';
 import 'package:yu_map/services/subscription_service.dart';
 
 Future<void> main() async {
@@ -20,11 +21,17 @@ Future<void> main() async {
     );
   }
 
-  // Initialize AdMob.
-  unawaited(MobileAds.instance.initialize());
+  // Initialize AdMob only when production ad unit IDs are configured.
+  if (AppConfig.isAdMobConfigured) {
+    unawaited(MobileAds.instance.initialize());
+  }
 
   // Initialize RevenueCat subscriptions.
   await SubscriptionService().initialize();
+
+  // Initialize Firebase Analytics (safe — no-ops if Firebase is not configured).
+  AnalyticsService.instance.initialise();
+  AnalyticsService.instance.logAppOpen();
 
   // Launch app — with or without Sentry.
   if (AppConfig.isSentryConfigured) {

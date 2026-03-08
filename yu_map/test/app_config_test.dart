@@ -16,11 +16,12 @@ void main() {
       expect(AppConfig.isSentryConfigured, false);
     });
 
-    test('AdMob test IDs are set by default', () {
-      expect(AppConfig.adMobBannerIdAndroid, contains('ca-app-pub-3940256099942544'));
-      expect(AppConfig.adMobBannerIdIos, contains('ca-app-pub-3940256099942544'));
-      expect(AppConfig.adMobRewardedIdAndroid, contains('ca-app-pub-3940256099942544'));
-      expect(AppConfig.adMobRewardedIdIos, contains('ca-app-pub-3940256099942544'));
+    test('AdMob IDs are empty by default (ads disabled until configured)', () {
+      expect(AppConfig.adMobBannerIdAndroid, isEmpty);
+      expect(AppConfig.adMobBannerIdIos, isEmpty);
+      expect(AppConfig.adMobRewardedIdAndroid, isEmpty);
+      expect(AppConfig.adMobRewardedIdIos, isEmpty);
+      expect(AppConfig.isAdMobConfigured, false);
     });
   });
 }

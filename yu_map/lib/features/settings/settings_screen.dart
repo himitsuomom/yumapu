@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/subscription_provider.dart';
@@ -14,10 +15,12 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         children: [
-          // Premium section
-          _sectionHeader(context, 'プレミアム'),
-          _PremiumTile(),
-          const Divider(),
+          // Premium section — only shown when RevenueCat is configured.
+          if (AppConfig.isRevenueCatConfigured) ...[
+            _sectionHeader(context, 'プレミアム'),
+            _PremiumTile(),
+            const Divider(),
+          ],
 
           // Account section
           _sectionHeader(context, 'アカウント'),

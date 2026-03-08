@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/services/ad_service.dart';
 
 /// A self-contained banner ad widget.
 /// Loads and displays an adaptive banner ad.
-/// Shows nothing if the ad fails to load.
+/// Shows nothing if ads are not configured or the ad fails to load.
 class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({super.key});
 
@@ -19,7 +20,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_bannerAd == null) {
+    if (_bannerAd == null && AppConfig.isAdMobConfigured) {
       _loadAd();
     }
   }

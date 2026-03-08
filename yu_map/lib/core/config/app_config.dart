@@ -37,22 +37,30 @@ class AppConfig {
     defaultValue: '',
   );
 
-  // AdMob — test IDs used by default; replace with production IDs before release
+  // AdMob — default to empty so ads are disabled until production IDs are
+  // injected via --dart-define.  Google test IDs are kept in comments for
+  // local development convenience.
+  //
+  // Test IDs (for development only — never ship with these):
+  //   Banner  Android: ca-app-pub-3940256099942544/6300978111
+  //   Banner  iOS:     ca-app-pub-3940256099942544/2934735716
+  //   Rewarded Android: ca-app-pub-3940256099942544/5224354917
+  //   Rewarded iOS:     ca-app-pub-3940256099942544/1712485313
   static const String adMobBannerIdAndroid = String.fromEnvironment(
     'ADMOB_BANNER_ANDROID',
-    defaultValue: 'ca-app-pub-3940256099942544/6300978111',
+    defaultValue: '',
   );
   static const String adMobBannerIdIos = String.fromEnvironment(
     'ADMOB_BANNER_IOS',
-    defaultValue: 'ca-app-pub-3940256099942544/2934735716',
+    defaultValue: '',
   );
   static const String adMobRewardedIdAndroid = String.fromEnvironment(
     'ADMOB_REWARDED_ANDROID',
-    defaultValue: 'ca-app-pub-3940256099942544/5224354917',
+    defaultValue: '',
   );
   static const String adMobRewardedIdIos = String.fromEnvironment(
     'ADMOB_REWARDED_IOS',
-    defaultValue: 'ca-app-pub-3940256099942544/1712485313',
+    defaultValue: '',
   );
 
   // Sentry
@@ -69,6 +77,10 @@ class AppConfig {
   /// True when RevenueCat keys are provided.
   static bool get isRevenueCatConfigured =>
       revenueCatKeyAndroid.isNotEmpty || revenueCatKeyIos.isNotEmpty;
+
+  /// True when AdMob ad unit IDs are provided (at least one banner ID).
+  static bool get isAdMobConfigured =>
+      adMobBannerIdAndroid.isNotEmpty || adMobBannerIdIos.isNotEmpty;
 
   /// True when Sentry DSN is provided.
   static bool get isSentryConfigured => sentryDsn.isNotEmpty;
