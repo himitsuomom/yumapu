@@ -62,11 +62,11 @@ All Flutter commands run from `yu_map/`:
 
 ## Key Patterns
 
-- **Entities**: `lib/domain/entities/` — Equatable value objects with `fromJson(Map<String, dynamic>)` factories. JSON keys use snake_case.
-- **Services**: `lib/services/` — Constructor-injected `SupabaseClient`, private `_cache` fields, public unmodifiable getters.
-- **Tests**: `test/` mirrors `lib/`. Uses `group()` + `test()` with manual mock classes and `mocktail`.
-- **Migrations**: `supabase/migrations/` — Timestamped SQL files. All tables use UUID PKs, RLS enabled.
-- **Edge Functions**: `supabase/functions/<name>/index.ts` — Deno imports, `serve()` pattern.
+- **Entities**: `yu_map/lib/domain/entities/` — Equatable value objects with `fromJson(Map<String, dynamic>)` factories. JSON keys use snake_case.
+- **Services**: `yu_map/lib/services/` — Constructor-injected `SupabaseClient`, private `_cache` fields, public unmodifiable getters.
+- **Tests**: `yu_map/test/` mirrors `lib/`. Uses `group()` + `test()` with manual mock classes and `mocktail`.
+- **Migrations**: `yu_map/supabase/migrations/` — Timestamped SQL files. All tables use UUID PKs, RLS enabled.
+- **Edge Functions**: `yu_map/supabase/functions/<name>/index.ts` — Deno imports, `serve()` pattern.
 
 ## Approval-Gated Changes
 

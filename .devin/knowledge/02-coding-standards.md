@@ -14,7 +14,7 @@
 
 ## Dart / Flutter Conventions
 
-### Entities (`lib/domain/entities/`)
+### Entities (`yu_map/lib/domain/entities/`)
 - Extend `Equatable`.
 - Use `const` constructors.
 - Include `fromJson(Map<String, dynamic>)` factory constructor.
@@ -22,7 +22,7 @@
 - List relevant fields in `props` for equality.
 - No Flutter or data-layer dependencies in entity files.
 
-### Services (`lib/services/`)
+### Services (`yu_map/lib/services/`)
 - Constructor-inject `SupabaseClient` (or other dependencies).
 - Use private `_cache` fields with public unmodifiable getters (`Map.unmodifiable`).
 - Build PostgREST queries incrementally using `var query = ...` then chaining `.eq()`, `.ilike()`, `.contains()` etc.
@@ -36,14 +36,14 @@
 
 ## TypeScript / Deno (Edge Functions)
 
-- Located at `supabase/functions/<name>/index.ts`.
+- Located at `yu_map/supabase/functions/<name>/index.ts`.
 - Use `serve()` from Deno std library.
 - Create Supabase client using env vars `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 - Return JSON responses with `Content-Type: application/json`.
 
 ## SQL (Migrations)
 
-- Located at `supabase/migrations/`.
+- Located at `yu_map/supabase/migrations/`.
 - File naming: `YYYYMMDDHHMMSS_description.sql`.
 - All tables use UUID primary keys (`gen_random_uuid()`).
 - Enable RLS on all tables.

@@ -2,6 +2,8 @@
 
 **Use when:** Responding to review comments on a Yu-Map PR that request code changes.
 
+**Target branch:** `main`
+
 ---
 
 ## Steps
