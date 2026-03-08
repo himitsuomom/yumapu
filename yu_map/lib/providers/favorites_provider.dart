@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/services/analytics_service.dart';
 
 /// User's favorited facility IDs (stored locally in Supabase).
 /// Uses a simple "favorites" table approach: user_id + facility_id.
@@ -43,6 +44,7 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
 
     if (current.contains(facilityId)) {
       // Remove
+      AnalyticsService.instance.logFavoriteToggle(facilityId: facilityId, added: false);
       state = AsyncData({...current}..remove(facilityId));
       try {
         await client
@@ -55,6 +57,7 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
       }
     } else {
       // Add
+      AnalyticsService.instance.logFavoriteToggle(facilityId: facilityId, added: true);
       state = AsyncData({...current, facilityId});
       try {
         await client.from('favorites').insert({

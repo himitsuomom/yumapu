@@ -3,6 +3,7 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/providers/review_provider.dart';
+import 'package:yu_map/services/analytics_service.dart';
 
 class WriteReviewScreen extends ConsumerStatefulWidget {
   const WriteReviewScreen({
@@ -48,6 +49,11 @@ class _WriteReviewScreenState extends ConsumerState<WriteReviewScreen> {
           rating: _rating,
         );
     if (success && mounted) {
+      AnalyticsService.instance.logReviewSubmit(
+        facilityId: widget.facilityId,
+        rating: _rating,
+        contentLength: content.length,
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('レビューを投稿しました！')),
       );

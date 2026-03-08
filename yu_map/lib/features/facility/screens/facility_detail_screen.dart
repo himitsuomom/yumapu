@@ -13,6 +13,7 @@ import 'package:yu_map/providers/visit_provider.dart';
 import 'package:yu_map/features/reviews/screens/write_review_screen.dart';
 import 'package:yu_map/features/facility/widgets/review_card.dart';
 import 'package:yu_map/core/widgets/banner_ad_widget.dart';
+import 'package:yu_map/services/analytics_service.dart';
 
 class FacilityDetailScreen extends ConsumerWidget {
   const FacilityDetailScreen({super.key, required this.facilityId});
@@ -37,6 +38,10 @@ class FacilityDetailScreen extends ConsumerWidget {
           if (facility == null) {
             return const AppErrorWidget(message: '施設が見つかりませんでした');
           }
+          AnalyticsService.instance.logFacilityView(
+            facilityId: facility.id,
+            facilityName: facility.name,
+          );
           return CustomScrollView(
             slivers: [
               // App bar with map

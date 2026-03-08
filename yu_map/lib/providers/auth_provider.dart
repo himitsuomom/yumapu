@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/domain/entities/user.dart' as app;
+import 'package:yu_map/services/analytics_service.dart';
 
 /// Exposes the Supabase client instance.
 /// Returns null-safe: only usable when Supabase is configured.
@@ -59,6 +60,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       await _client.auth.signInWithPassword(email: email, password: password);
+      AnalyticsService.instance.logLogin();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -69,6 +71,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       await _client.auth.signUp(email: email, password: password);
+      AnalyticsService.instance.logSignUp();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);

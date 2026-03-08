@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/services/analytics_service.dart';
 
 /// Visit (check-in) record.
 class Visit {
@@ -82,6 +83,7 @@ class CheckInNotifier extends StateNotifier<AsyncValue<void>> {
       });
       _ref.invalidate(userVisitsProvider);
       _ref.invalidate(visitedFacilityIdsProvider);
+      AnalyticsService.instance.logCheckIn(facilityId: facilityId);
       state = const AsyncData(null);
       return true;
     } catch (e, st) {

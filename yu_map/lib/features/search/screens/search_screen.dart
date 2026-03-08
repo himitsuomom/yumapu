@@ -8,6 +8,7 @@ import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/features/facility/screens/facility_detail_screen.dart';
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
+import 'package:yu_map/services/analytics_service.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -32,10 +33,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _performSearch() {
+    final query = _searchController.text.trim();
+    if (query.isNotEmpty) {
+      AnalyticsService.instance.logSearch(query);
+    }
     ref.read(facilitySearchProvider.notifier).search(
-          query: _searchController.text.trim().isEmpty
-              ? null
-              : _searchController.text.trim(),
+          query: query.isEmpty ? null : query,
         );
   }
 
