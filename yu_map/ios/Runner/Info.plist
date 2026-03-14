@@ -47,6 +47,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>GOOGLE_MAPS_API_KEY</key>
+	<string>AIzaSyA4e_UqLkMEKcIM9i0SyW7LjjyyaMh-FEg</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
