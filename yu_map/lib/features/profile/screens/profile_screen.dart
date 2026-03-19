@@ -5,6 +5,7 @@ import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/features/settings/settings_screen.dart';
+import 'package:yu_map/widgets/crown_badge.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -48,6 +49,7 @@ class ProfileScreen extends ConsumerWidget {
                 email: session?.user.email,
                 avatarUrl: user?.avatarUrl,
                 bio: user?.bio,
+                isPremium: user?.isPremium ?? false,
               ),
             ),
             const SizedBox(height: 24),
@@ -119,22 +121,29 @@ class ProfileScreen extends ConsumerWidget {
     String? email,
     String? avatarUrl,
     String? bio,
+    bool isPremium = false,
   }) {
     return Column(
       children: [
-        CircleAvatar(
+        UserAvatarWithCrown(
+          isPremium: isPremium,
           radius: 40,
+          avatarUrl: avatarUrl,
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          backgroundImage:
-              avatarUrl != null ? NetworkImage(avatarUrl) : null,
-          child: avatarUrl == null
-              ? const Icon(Icons.person, size: 40)
-              : null,
         ),
         const SizedBox(height: 12),
-        Text(
-          displayName,
-          style: Theme.of(context).textTheme.titleLarge,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayName,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            if (isPremium) ...[
+              const SizedBox(width: 8),
+              const PremiumChip(),
+            ],
+          ],
         ),
         if (email != null)
           Text(
