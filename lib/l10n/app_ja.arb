@@ -1,0 +1,59 @@
+{
+  "@@locale": "ja",
+  "appTitle": "Yu-Map",
+  "@appTitle": {
+    "description": "Application title"
+  },
+  "commonButtonCancel": "キャンセル",
+  "@commonButtonCancel": {
+    "description": "Cancel button label"
+  },
+  "commonButtonRetry": "再試行",
+  "@commonButtonRetry": {
+    "description": "Retry button label"
+  },
+  "commonButtonOk": "OK",
+  "@commonButtonOk": {
+    "description": "OK button label"
+  },
+  "commonLabelLoading": "読み込み中...",
+  "@commonLabelLoading": {
+    "description": "Loading indicator label"
+  },
+  "commonMessageNoData": "データがありません",
+  "@commonMessageNoData": {
+    "description": "Empty state message when no data is available"
+  },
+  "commonMessageError": "エラーが発生しました",
+  "@commonMessageError": {
+    "description": "Generic error message"
+  },
+  "commonMessageNetworkError": "ネットワークエラーが発生しました",
+  "@commonMessageNetworkError": {
+    "description": "Network error message"
+  },
+  "userRankingTitleBeginner": "湯めぐり初心者",
+  "@userRankingTitleBeginner": {
+    "description": "User ranking title for beginners"
+  },
+  "userRankingTitleIntermediate": "湯めぐり中級者",
+  "@userRankingTitleIntermediate": {
+    "description": "User ranking title for intermediate users"
+  },
+  "userRankingTitleExpert": "温泉愛好家",
+  "@userRankingTitleExpert": {
+    "description": "User ranking title for experts"
+  },
+  "userRankingTitleMaster": "湯めぐり名人",
+  "@userRankingTitleMaster": {
+    "description": "User ranking title for masters"
+  },
+  "userRankingTitlePro": "湯の達人",
+  "@userRankingTitlePro": {
+    "description": "User ranking title for professionals"
+  },
+  "userRankingTitleLegend": "湯マスター",
+  "@userRankingTitleLegend": {
+    "description": "User ranking title for legends"
+  }
+}
