@@ -29,9 +29,9 @@ class Review extends Equatable {
   });
 
   factory Review.fromJson(Map<String, dynamic> json) {
-    // When fetched with a join (e.g. `select('*, users(*)')`), author data
-    // lives under a nested `users` key.
-    final userMap = json['users'] as Map<String, dynamic>?;
+    // When fetched with a join (e.g. `select('*, profiles!user_id(*)')`),
+    // author data lives under a nested `profiles` key.
+    final userMap = json['profiles'] as Map<String, dynamic>?;
 
     return Review(
       id: json['id'] as String,
@@ -41,9 +41,8 @@ class Review extends Equatable {
       rating: json['rating'] as int,
       likesCount: json['likes_count'] as int? ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
-      authorDisplayName:
-          userMap?['display_name'] as String? ?? userMap?['username'] as String?,
-      authorAvatarUrl: userMap?['avatar_url'] as String?,
+      authorDisplayName: userMap?['name'] as String?,
+      authorAvatarUrl: userMap?['avatar'] as String?,
       authorIsPremium: userMap?['is_premium'] as bool? ?? false,
     );
   }
