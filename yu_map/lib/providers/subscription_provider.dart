@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +20,10 @@ class SubscriptionProvider extends ChangeNotifier {
 
   static const String _entitlement = '湯マップ Pro';
 
-  /// Configure RevenueCat and fetch initial premium status.
+  /// Fetch initial premium status from RevenueCat.
+  ///
+  /// The SDK itself is configured in [SubscriptionService.initialize] during
+  /// app startup. This method only reads state and registers a listener.
   Future<void> initialize() async {
     if (!isConfigured) return;
 
@@ -30,18 +31,6 @@ class SubscriptionProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final apiKey = Platform.isAndroid
-          ? AppConfig.revenueCatKeyAndroid
-          : AppConfig.revenueCatKeyIos;
-
-      if (apiKey.isEmpty) {
-        _isLoading = false;
-        notifyListeners();
-        return;
-      }
-
-      await Purchases.configure(PurchasesConfiguration(apiKey));
-
       final customerInfo = await Purchases.getCustomerInfo();
       _isPremium =
           customerInfo.entitlements.all[_entitlement]?.isActive ?? false;

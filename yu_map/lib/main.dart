@@ -8,7 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/app.dart';
 import 'package:yu_map/services/analytics_service.dart';
-import 'package:yu_map/providers/subscription_provider.dart';
+import 'package:yu_map/services/subscription_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,8 +26,9 @@ Future<void> main() async {
     unawaited(MobileAds.instance.initialize());
   }
 
-  // Initialize RevenueCat subscriptions.
-  await SubscriptionProvider().initialize();
+  // Configure the RevenueCat SDK globally (safe no-op when unconfigured).
+  // The Riverpod-managed SubscriptionProvider handles state separately.
+  await SubscriptionService().initialize();
 
   // Initialize Firebase Analytics (safe — no-ops if Firebase is not configured).
   AnalyticsService.instance.initialise();

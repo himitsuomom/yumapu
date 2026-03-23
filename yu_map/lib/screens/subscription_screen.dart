@@ -37,11 +37,12 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   }
 
   Widget _buildBody(BuildContext context, SubscriptionProvider sub) {
-    // Listen for error messages.
+    // Listen for error messages — capture value before the async callback.
     if (sub.errorMessage != null) {
+      final message = sub.errorMessage!;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(sub.errorMessage!)),
+          SnackBar(content: Text(message)),
         );
         sub.clearError();
       });
