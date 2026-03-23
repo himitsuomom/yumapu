@@ -9,7 +9,7 @@ final facilityReviewsProvider =
   if (client == null) return [];
   final data = await client
       .from('reviews')
-      .select()
+      .select('*, profiles!user_id(*)')
       .eq('facility_id', facilityId)
       .order('created_at', ascending: false);
   return (data as List).map((r) => Review.fromJson(r)).toList();
