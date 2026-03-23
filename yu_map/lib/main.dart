@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,8 +22,16 @@ Future<void> main() async {
     );
   }
 
-  // Initialize AdMob only when production ad unit IDs are configured.
-  if (AppConfig.isAdMobConfigured) {
+  // Initialize AdMob only when the current platform's ad unit IDs are
+  // configured.  On iOS the SDK requires GADApplicationIdentifier in
+  // Info.plist; calling initialize() without it throws
+  // GADInvalidInitializationException.
+  final isAdMobReady = Platform.isAndroid
+      ? AppConfig.adMobBannerIdAndroid.isNotEmpty
+      : Platform.isIOS
+          ? AppConfig.adMobBannerIdIos.isNotEmpty
+          : false;
+  if (isAdMobReady) {
     unawaited(MobileAds.instance.initialize());
   }
 
