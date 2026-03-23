@@ -8,7 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/app.dart';
 import 'package:yu_map/services/analytics_service.dart';
-import 'package:yu_map/services/subscription_service.dart';
+import 'package:yu_map/providers/subscription_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +27,7 @@ Future<void> main() async {
   }
 
   // Initialize RevenueCat subscriptions.
-  await SubscriptionService().initialize();
+  await SubscriptionProvider().initialize();
 
   // Initialize Firebase Analytics (safe — no-ops if Firebase is not configured).
   AnalyticsService.instance.initialise();
