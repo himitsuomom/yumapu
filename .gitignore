@@ -47,3 +47,10 @@ app.*.map.json
 .env
 .env.local
 .env.*.local
+
+# Firebase / Google Services credentials
+# These contain API keys and project identifiers — do NOT commit
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+firebase.json
