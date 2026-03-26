@@ -1,8 +1,12 @@
 // lib/services/facility_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 
 class FacilityService {
+  static const double _metersPerDegreeLat = 111000.0;
+  static const double _lngCorrectionFactor = 0.7; // intentional margin, not cos(35°)
+
   final SupabaseClient _client;
 
   FacilityService(this._client);
@@ -62,10 +66,12 @@ class FacilityService {
     if (latitude != null && longitude != null && radius != null) {
       // Note: Actual geolocation filtering may require postgis functions
       // This is a simplified version
-      query = query.lte('latitude', latitude + radius / 111.0)
-                  .gte('latitude', latitude - radius / 111.0)
-                  .lte('longitude', longitude + radius / (111.0 * 0.7)) // Approximate for Japan's latitude
-                  .gte('longitude', longitude - radius / (111.0 * 0.7));
+      final latDelta = radius / (_metersPerDegreeLat / 1000.0);
+      final lngDelta = radius / (_metersPerDegreeLat / 1000.0 * _lngCorrectionFactor);
+      query = query.lte('latitude', latitude + latDelta)
+                  .gte('latitude', latitude - latDelta)
+                  .lte('longitude', longitude + lngDelta)
+                  .gte('longitude', longitude - lngDelta);
     }
 
     final response = await query;

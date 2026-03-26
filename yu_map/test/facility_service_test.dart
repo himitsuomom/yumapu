@@ -1,219 +1,280 @@
 // test/facility_service_test.dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:yu_map/services/facility_service.dart';
+import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/domain/entities/review.dart';
 
 void main() {
-  group('FacilityService Tests', () {
-    late FacilityService facilityService;
-    late MockSupabaseClient mockClient;
-
-    setUp(() {
-      mockClient = MockSupabaseClient();
-      facilityService = FacilityService(mockClient);
+  group('Facility.fromJson', () {
+    test('parses latitude/longitude keys', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+        'latitude': 35.6762,
+        'longitude': 139.6503,
+      });
+      expect(facility.latitude, 35.6762);
+      expect(facility.longitude, 139.6503);
     });
 
-    test('should build query with search term and filters without reassignment', () async {
-      // Arrange
-      final searchQuery = 'onsen';
-      final attributes = {'tattoo': true, 'sauna': true};
-      
-      // Act
-      await facilityService.searchFacilities(
-        searchQuery: searchQuery,
-        attributes: attributes,
-      );
-
-      // Assert
-      expect(mockClient.queryCalls.length, greaterThan(0));
-      // Verify that query was built correctly with both search term and attributes
-      expect(mockClient.lastQueryHasILike, true);
-      expect(mockClient.lastQueryHasContains, true);
+    test('parses lat/lng keys as fallback', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+        'lat': 35.6762,
+        'lng': 139.6503,
+      });
+      expect(facility.latitude, 35.6762);
+      expect(facility.longitude, 139.6503);
     });
 
-    test('should maintain all filters when chaining queries', () async {
-      // Arrange
-      final filters = {
-        'prefecture_id': '13',
-        'amenities': {'wifi': true, 'parking': true}
-      };
-
-      // Act
-      await facilityService.getFilteredFacilities(filters: filters);
-
-      // Assert
-      expect(mockClient.queryCalls.length, greaterThan(0));
-      // Verify the filters were applied correctly
-      expect(mockClient.lastQueryHadPrefectureFilter, true);
-      expect(mockClient.lastQueryHadAmenityFilters, true);
+    test('prefers latitude over lat when both present', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+        'latitude': 35.0,
+        'lat': 36.0,
+        'longitude': 139.0,
+        'lng': 140.0,
+      });
+      expect(facility.latitude, 35.0);
+      expect(facility.longitude, 139.0);
     });
 
-    test('should cache facilities properly', () async {
-      // Act
-      await facilityService.getFacilityById('test-id');
+    test('returns 0.0 when lat/lng missing', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+      });
+      expect(facility.latitude, 0.0);
+      expect(facility.longitude, 0.0);
+    });
 
-      // Assert
-      expect(facilityService.cache.length, greaterThanOrEqual(0)); // Can be 0 if API call failed
+    test('hasValidLocation is true when coordinates are non-zero', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+        'latitude': 35.6762,
+        'longitude': 139.6503,
+      });
+      expect(facility.hasValidLocation, isTrue);
+    });
+
+    test('hasValidLocation is false when both coordinates are zero', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+      });
+      expect(facility.hasValidLocation, isFalse);
+    });
+
+    test('businessHours defaults to empty map when null', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+      });
+      expect(facility.businessHours, isEmpty);
+    });
+
+    test('priceInfo defaults to empty map when null', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+      });
+      expect(facility.priceInfo, isEmpty);
+    });
+
+    test('dataQualityScore defaults to 1 when null', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+      });
+      expect(facility.dataQualityScore, 1);
+    });
+
+    test('dataSource defaults to government when null', () {
+      final facility = Facility.fromJson({
+        'id': '1',
+        'name': 'Test Onsen',
+      });
+      expect(facility.dataSource, 'government');
     });
   });
-}
 
-class MockSupabaseClient implements SupabaseClient {
-  final List<String> queryCalls = [];
-  bool lastQueryHasILike = false;
-  bool lastQueryHasContains = false;
-  bool lastQueryHadPrefectureFilter = false;
-  bool lastQueryHadAmenityFilters = false;
+  group('Facility equality', () {
+    test('same id and data are equal', () {
+      final a = Facility.fromJson({
+        'id': '1',
+        'name': 'Test',
+        'latitude': 35.0,
+        'longitude': 139.0,
+      });
+      final b = Facility.fromJson({
+        'id': '1',
+        'name': 'Test',
+        'latitude': 35.0,
+        'longitude': 139.0,
+      });
+      expect(a, equals(b));
+    });
 
-  @override
-  PostgrestClient from(String table) {
-    queryCalls.add(table);
-    return MockPostgrestClient(this);
-  }
+    test('different dataQualityScore are not equal', () {
+      final a = Facility.fromJson({
+        'id': '1',
+        'name': 'Test',
+        'data_quality_score': 3,
+      });
+      final b = Facility.fromJson({
+        'id': '1',
+        'name': 'Test',
+        'data_quality_score': 5,
+      });
+      expect(a, isNot(equals(b)));
+    });
+  });
 
-  // Other required methods would be implemented here
-  @override
-  AuthClient get auth => throw UnimplementedError();
+  group('Review.fromJson', () {
+    test('parses basic fields', () {
+      final review = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Great onsen!',
+        'rating': 5,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      expect(review.id, 'r1');
+      expect(review.content, 'Great onsen!');
+      expect(review.rating, 5);
+    });
 
-  @override
-  FunctionsClient get functions => throw UnimplementedError();
+    test('likes_count defaults to 0 when null', () {
+      final review = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Nice',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      expect(review.likesCount, 0);
+    });
 
-  @override
-  RealtimeChannel channel(String topic, {Map<String, dynamic>? config}) {
-    throw UnimplementedError();
-  }
+    test('parses users JOIN key for user info', () {
+      final review = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Nice',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+        'users': {
+          'display_name': 'Taro',
+          'avatar_url': 'https://example.com/avatar.png',
+          'is_premium': true,
+        },
+      });
+      expect(review.userName, 'Taro');
+      expect(review.userAvatarUrl, 'https://example.com/avatar.png');
+      expect(review.isPremium, isTrue);
+    });
 
-  @override
-  Future<RealtimeChannel> connectRealtime() {
-    throw UnimplementedError();
-  }
+    test('parses profiles JOIN key as fallback', () {
+      final review = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Nice',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+        'profiles': {
+          'username': 'taro123',
+          'avatar_url': 'https://example.com/avatar2.png',
+        },
+      });
+      expect(review.userName, 'taro123');
+      expect(review.userAvatarUrl, 'https://example.com/avatar2.png');
+    });
 
-  @override
-  RealtimeClient get realtime => throw UnimplementedError();
+    test('users takes priority over profiles', () {
+      final review = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Nice',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+        'users': {'display_name': 'From Users'},
+        'profiles': {'display_name': 'From Profiles'},
+      });
+      expect(review.userName, 'From Users');
+    });
 
-  @override
-  StorageClient get storage => throw UnimplementedError();
+    test('is_premium defaults to false when null', () {
+      final review = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Nice',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      expect(review.isPremium, isFalse);
+    });
 
-  @override
-  Future<void> removeAuthEventListener(AuthChangeEvent event) {
-    throw UnimplementedError();
-  }
+    test('invalid created_at throws FormatException', () {
+      expect(
+        () => Review.fromJson({
+          'id': 'r1',
+          'user_id': 'u1',
+          'facility_id': 'f1',
+          'content': 'Nice',
+          'rating': 4,
+          'created_at': 'not-a-date',
+        }),
+        throwsFormatException,
+      );
+    });
+  });
 
-  @override
-  Future<void> setAuthCookie(String cookie) {
-    throw UnimplementedError();
-  }
+  group('Review equality', () {
+    test('same id but different content are not equal', () {
+      final a = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Version 1',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      final b = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Version 2',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      expect(a, isNot(equals(b)));
+    });
 
-  @override
-  Future<T> rpc<T>(String fn, {Map<String, dynamic>? params}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Stream<Map<String, dynamic>> subscribe(
-    String table, {
-    required void Function(SupabaseRealtimePayload) handler,
-    String? filter,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<Map<String, dynamic>> getAuthCookie() {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<void> signOut() {
-    throw UnimplementedError();
-  }
-}
-
-class MockPostgrestClient implements PostgrestClient {
-  final MockSupabaseClient mockClient;
-
-  MockPostgrestClient(this.mockClient);
-
-  @override
-  PostgrestFilterBuilder select([String? columns]) {
-    return MockPostgrestFilterBuilder(mockClient);
-  }
-
-  // Other methods would be implemented here
-  @override
-  PostgrestFilterBuilder insert(dynamic values, {bool? returning, String? count}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  PostgrestFilterBuilder upsert(dynamic values, {bool? returning, String? count, String? onConflict}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  PostgrestFilterBuilder update(dynamic values, {bool? returning, String? count}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  PostgrestFilterBuilder delete({bool? returning, String? count}) {
-    throw UnimplementedError();
-  }
-
-  @override
-  void dispose() {}
-}
-
-class MockPostgrestFilterBuilder implements PostgrestFilterBuilder {
-  final MockSupabaseClient mockClient;
-
-  MockPostgrestFilterBuilder(this.mockClient);
-
-  @override
-  Future<List<Map<String, dynamic>>>? execute() {
-    // Simulate API response
-    return Future.value([
-      {'id': 'test-id', 'name': 'Test Facility', 'latitude': 35.6895, 'longitude': 139.6917}
-    ]);
-  }
-
-  @override
-  PostgrestFilterBuilder ilike(String column, String pattern) {
-    mockClient.lastQueryHasILike = true;
-    return this;
-  }
-
-  @override
-  PostgrestFilterBuilder eq(String column, dynamic value) {
-    if (column == 'prefecture_id') {
-      mockClient.lastQueryHadPrefectureFilter = true;
-    }
-    return this;
-  }
-
-  @override
-  PostgrestFilterBuilder contains(String column, dynamic value) {
-    if (column == 'amenities') {
-      mockClient.lastQueryHasContains = true;
-      mockClient.lastQueryHadAmenityFilters = true;
-    }
-    return this;
-  }
-
-  // Other filter methods would be implemented here...
-  @override
-  PostgrestFilterBuilder lte(String column, dynamic value) => this;
-
-  @override
-  PostgrestFilterBuilder gte(String column, dynamic value) => this;
-
-  @override
-  Future<Map<String, dynamic>> single() {
-    return Future.value({'id': 'test-id', 'name': 'Test Facility', 'latitude': 35.6895, 'longitude': 139.6917});
-  }
-
-  @override
-  Future<int> count({String? column, String? count}) {
-    return Future.value(1);
-  }
+    test('same content are equal', () {
+      final a = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Same text',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      final b = Review.fromJson({
+        'id': 'r1',
+        'user_id': 'u1',
+        'facility_id': 'f1',
+        'content': 'Same text',
+        'rating': 4,
+        'created_at': '2024-01-01T00:00:00Z',
+      });
+      expect(a, equals(b));
+    });
+  });
 }

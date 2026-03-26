@@ -1,5 +1,6 @@
 // lib/domain/entities/facility.dart
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 
 class Facility extends Equatable {
   final String id;
@@ -36,9 +37,24 @@ class Facility extends Equatable {
     this.dataQualityScore = 1,
   });
 
+  /// 有効な座標を持つかどうか。
+  bool get hasValidLocation => latitude != 0.0 || longitude != 0.0;
+
   factory Facility.fromJson(Map<String, dynamic> json) {
-    // Handling PostGIS point if returned as GeoJSON or similar would require parsing.
-    // Assuming simple lat/lng fields for now or adapter layer handles it.
+    double parseLat() {
+      if (json['latitude'] != null) return (json['latitude'] as num).toDouble();
+      if (json['lat'] != null) return (json['lat'] as num).toDouble();
+      debugPrint('[Facility.fromJson] WARNING: latitude missing for id="${json['id']}"');
+      return 0.0;
+    }
+
+    double parseLng() {
+      if (json['longitude'] != null) return (json['longitude'] as num).toDouble();
+      if (json['lng'] != null) return (json['lng'] as num).toDouble();
+      debugPrint('[Facility.fromJson] WARNING: longitude missing for id="${json['id']}"');
+      return 0.0;
+    }
+
     return Facility(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -46,8 +62,8 @@ class Facility extends Equatable {
       googlePlaceId: json['google_place_id'] as String?,
       prefectureId: json['prefecture_id'] as String?,
       facilityTypeId: json['facility_type_id'] as String?,
-      latitude: (json['lat'] as num?)?.toDouble() ?? 0.0,
-      longitude: (json['lng'] as num?)?.toDouble() ?? 0.0,
+      latitude: parseLat(),
+      longitude: parseLng(),
       address: json['address'] as String?,
       phone: json['phone'] as String?,
       website: json['website'] as String?,

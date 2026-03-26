@@ -244,16 +244,19 @@ BEGIN
         f.data_quality_score
     FROM facilities f
     JOIN facility_types ft ON f.facility_type_id = ft.id
-    LEFT JOIN facility_amenities fa ON f.id = fa.facility_id
     WHERE ST_Within(
         f.location::geometry,
         ST_MakeEnvelope(min_lng, min_lat, max_lng, max_lat, 4326)
     )
     AND (
-        filter_amenities IS NULL 
-        OR fa.amenity_id = ANY(filter_amenities)
+        filter_amenities IS NULL
+        OR (
+            SELECT COUNT(DISTINCT fa.amenity_id)
+            FROM facility_amenities fa
+            WHERE fa.facility_id = f.id
+              AND fa.amenity_id = ANY(filter_amenities)
+        ) = array_length(filter_amenities, 1)
     )
-    GROUP BY f.id, f.name, f.location, ft.code, f.data_quality_score
     ORDER BY f.data_quality_score DESC
     LIMIT facility_limit;
 END;
