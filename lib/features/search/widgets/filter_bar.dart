@@ -1,0 +1,155 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yu_map/providers/auth_provider.dart';
+
+// ── Data models ───────────────────────────────────────────────────────────────
+
+class FacilityTypeOption {
+  final String id;
+  final String name;
+  const FacilityTypeOption({required this.id, required this.name});
+}
+
+class AmenityOption {
+  final String id;
+  final String name;
+  const AmenityOption({required this.id, required this.name});
+}
+
+// ── Providers ─────────────────────────────────────────────────────────────────
+
+final facilityTypeOptionsProvider =
+    FutureProvider.autoDispose<List<FacilityTypeOption>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return [];
+  final rows = await client
+      .from('facility_types')
+      .select('id, name')
+      .order('name') as List;
+  return rows
+      .map((r) => FacilityTypeOption(
+            id: r['id'] as String,
+            name: r['name'] as String,
+          ))
+      .toList();
+});
+
+final amenityOptionsProvider =
+    FutureProvider.autoDispose<List<AmenityOption>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return [];
+  final rows = await client
+      .from('amenities')
+      .select('id, name')
+      .order('name') as List;
+  return rows
+      .map((r) => AmenityOption(
+            id: r['id'] as String,
+            name: r['name'] as String,
+          ))
+      .toList();
+});
+
+// ── Widget ────────────────────────────────────────────────────────────────────
+
+/// Horizontal scrolling chip rows for facility type and amenity filtering.
+///
+/// Each amenity chip is independently toggleable: selecting or deselecting one
+/// does not affect the others (existing selections are preserved via
+/// [onAmenityToggled]).
+class FilterBar extends ConsumerWidget {
+  const FilterBar({
+    super.key,
+    required this.selectedFacilityTypeId,
+    required this.selectedAmenityIds,
+    required this.onFacilityTypeChanged,
+    required this.onAmenityToggled,
+  });
+
+  final String? selectedFacilityTypeId;
+  final List<String> selectedAmenityIds;
+
+  /// Called with the new facility type ID, or null to clear the filter.
+  final void Function(String? id) onFacilityTypeChanged;
+
+  /// Called with the toggled amenity ID. The parent is responsible for
+  /// adding or removing it from the current selection list.
+  final void Function(String id) onAmenityToggled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final typesAsync = ref.watch(facilityTypeOptionsProvider);
+    final amenitiesAsync = ref.watch(amenityOptionsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── Facility type row ──────────────────────────────────────────────
+        typesAsync.when(
+          data: (types) {
+            if (types.isEmpty) return const SizedBox.shrink();
+            return _ChipRow(
+              children: [
+                // "すべて" chip clears the facility type filter
+                FilterChip(
+                  label: const Text('すべて'),
+                  selected: selectedFacilityTypeId == null,
+                  onSelected: (_) => onFacilityTypeChanged(null),
+                ),
+                ...types.map((t) => FilterChip(
+                      label: Text(t.name),
+                      selected: selectedFacilityTypeId == t.id,
+                      onSelected: (selected) =>
+                          onFacilityTypeChanged(selected ? t.id : null),
+                    )),
+              ],
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+        ),
+        // ── Amenity row ────────────────────────────────────────────────────
+        amenitiesAsync.when(
+          data: (amenities) {
+            if (amenities.isEmpty) return const SizedBox.shrink();
+            return _ChipRow(
+              children: amenities
+                  .map((a) => FilterChip(
+                        label: Text(a.name),
+                        selected: selectedAmenityIds.contains(a.id),
+                        // Toggle only this amenity; others are unaffected
+                        onSelected: (_) => onAmenityToggled(a.id),
+                      ))
+                  .toList(),
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Internal helper ───────────────────────────────────────────────────────────
+
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: children.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => children[i],
+      ),
+    );
+  }
+}

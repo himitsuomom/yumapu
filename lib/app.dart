@@ -1,84 +1,93 @@
-// lib/app.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:yu_map/gen_l10n/app_localizations.dart';
-import 'package:yu_map/screens/auth_screen.dart';
-import 'package:yu_map/screens/main_screen.dart';
-import 'package:yu_map/services/auth_service.dart';
-import 'package:yu_map/providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yu_map/core/constants/app_constants.dart';
+import 'package:yu_map/core/theme/app_theme.dart';
+import 'package:yu_map/core/widgets/offline_banner.dart';
+import 'package:yu_map/features/auth/screens/login_screen.dart';
+import 'package:yu_map/features/auth/screens/register_screen.dart';
+import 'package:yu_map/features/facility/screens/facility_detail_screen.dart';
+import 'package:yu_map/features/home/home_shell.dart';
+import 'package:yu_map/features/profile/screens/profile_screen.dart';
+import 'package:yu_map/features/reviews/screens/write_review_screen.dart';
+import 'package:yu_map/features/settings/settings_screen.dart';
+import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/providers/connectivity_provider.dart';
+import 'package:yu_map/screens/subscription_screen.dart';
 
-class YuMapApp extends StatelessWidget {
+class YuMapApp extends ConsumerWidget {
   const YuMapApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isOnline = ref.watch(connectivityProvider);
+
     return MaterialApp(
-      title: 'Yu-Map',
+      title: AppConstants.appName,
+      theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        // ロゴの赤系色調に合わせたテーマ設定
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFE57373), // ロゴの赤系色
-          primary: const Color(0xFFE57373),
-        ),
-        useMaterial3: true,
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.grey[50],
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFE57373), width: 2),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.red),
-          ),
-        ),
-      ),
-      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: StreamBuilder<AuthState>(
-        stream: AuthService.authStateChanges,
-        builder: (context, snapshot) {
-          // ローディング状態
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(),
+      // Named routes for screens pushed via Navigator.pushNamed.
+      routes: {
+        '/login': (_) => const LoginScreen(),
+        '/register': (_) => const RegisterScreen(),
+        '/subscription': (_) => const SubscriptionScreen(),
+        '/profile': (_) => const ProfileScreen(),
+        '/settings': (_) => const SettingsScreen(),
+      },
+      // Routes that carry typed arguments use onGenerateRoute.
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/facility':
+            final facilityId = settings.arguments as String;
+            return MaterialPageRoute<void>(
+              builder: (_) => FacilityDetailScreen(facilityId: facilityId),
+            );
+          case '/review':
+            final args = settings.arguments as Map<String, String>;
+            return MaterialPageRoute<void>(
+              builder: (_) => WriteReviewScreen(
+                facilityId: args['facilityId']!,
+                facilityName: args['facilityName']!,
               ),
             );
-          }
-
-          // 認証状態をチェック
-          if (snapshot.hasData && snapshot.data?.session != null) {
-            // ログイン済み：メイン画面を表示
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                context.read<AppState>().loadUserProfile();
-              }
-            });
-            return const MainScreen();
-          } else {
-            // 未ログイン：ログイン画面を表示
-            return const AuthScreen();
-          }
-        },
-      ),
+          default:
+            return null;
+        }
+      },
+      // Overlays OfflineBanner above all routes when the device is offline.
+      builder: (context, child) {
+        return Column(
+          children: [
+            if (!isOnline) const OfflineBanner(),
+            Expanded(child: child ?? const SizedBox.shrink()),
+          ],
+        );
+      },
+      home: const _AuthGate(),
     );
+  }
+}
+
+/// Watches [isSignedInProvider] and shows either [HomeShell] or [LoginScreen].
+///
+/// When the auth state changes (login / logout) any screens pushed on top of
+/// this gate are popped so the user always sees the correct root view.
+class _AuthGate extends ConsumerStatefulWidget {
+  const _AuthGate();
+
+  @override
+  ConsumerState<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends ConsumerState<_AuthGate> {
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<bool>(isSignedInProvider, (previous, next) {
+      if (previous != null && previous != next) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+
+    final isSignedIn = ref.watch(isSignedInProvider);
+    return isSignedIn ? const HomeShell() : const LoginScreen();
   }
 }

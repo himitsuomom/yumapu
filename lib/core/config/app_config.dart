@@ -1,60 +1,76 @@
-// lib/core/config/app_config.dart
-import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
+/// Centralized configuration for Yu-Map.
+///
+/// All values are injected at compile time via --dart-define.
+/// Never commit real keys. Use .env.example as reference.
 class AppConfig {
+  AppConfig._();
+
   // Supabase
-  static String get supabaseUrl => dotenv.env['SUPABASE_URL'] ?? '';
-  static String get supabaseAnonKey => dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://your-project.supabase.co',
+  );
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
 
   // Google Maps
-  static String get googleMapsKey {
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return dotenv.env['GOOGLE_MAPS_KEY_IOS'] ?? dotenv.env['GOOGLE_MAPS_KEY'] ?? '';
-    } else {
-      return dotenv.env['GOOGLE_MAPS_KEY_ANDROID'] ?? dotenv.env['GOOGLE_MAPS_KEY'] ?? '';
-    }
-  }
+  static const String googleMapsKeyAndroid = String.fromEnvironment(
+    'GOOGLE_MAPS_KEY_ANDROID',
+    defaultValue: '',
+  );
+  static const String googleMapsKeyIos = String.fromEnvironment(
+    'GOOGLE_MAPS_KEY_IOS',
+    defaultValue: '',
+  );
 
-  // AdMob 広告ユニットID
-  static String get admobBannerId {
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return dotenv.env['ADMOB_BANNER_IOS'] ?? '';
-    } else {
-      return dotenv.env['ADMOB_BANNER_ANDROID'] ?? '';
-    }
-  }
+  // RevenueCat
+  static const String revenueCatKeyAndroid = String.fromEnvironment(
+    'REVENUECAT_KEY_ANDROID',
+    defaultValue: '',
+  );
+  static const String revenueCatKeyIos = String.fromEnvironment(
+    'REVENUECAT_KEY_IOS',
+    defaultValue: '',
+  );
 
-  static String get admobRewardedId {
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return dotenv.env['ADMOB_REWARDED_IOS'] ?? '';
-    } else {
-      return dotenv.env['ADMOB_REWARDED_ANDROID'] ?? '';
-    }
-  }
+  // AdMob
+  static const String adMobBannerIdAndroid = String.fromEnvironment(
+    'ADMOB_BANNER_ANDROID',
+    defaultValue: '',
+  );
+  static const String adMobBannerIdIos = String.fromEnvironment(
+    'ADMOB_BANNER_IOS',
+    defaultValue: '',
+  );
+  static const String adMobRewardedIdAndroid = String.fromEnvironment(
+    'ADMOB_REWARDED_ANDROID',
+    defaultValue: '',
+  );
+  static const String adMobRewardedIdIos = String.fromEnvironment(
+    'ADMOB_REWARDED_IOS',
+    defaultValue: '',
+  );
 
-  // Sentry DSN（空欄の場合はSentryを無効化）
-  static String get sentryDsn => dotenv.env['SENTRY_DSN'] ?? '';
-  static bool get isSentryEnabled => sentryDsn.isNotEmpty;
+  // Sentry
+  static const String sentryDsn = String.fromEnvironment(
+    'SENTRY_DSN',
+    defaultValue: '',
+  );
 
-  static bool isConfigValid() {
-    return supabaseUrl.isNotEmpty &&
-        supabaseAnonKey.isNotEmpty &&
-        googleMapsKey.isNotEmpty;
-  }
+  /// True when real Supabase credentials are provided.
+  static bool get isSupabaseConfigured =>
+      supabaseAnonKey.isNotEmpty && !supabaseUrl.contains('your-project');
 
-  static void validateAndLog() {
-    final missingVars = <String>[];
+  /// True when RevenueCat keys are provided.
+  static bool get isRevenueCatConfigured =>
+      revenueCatKeyAndroid.isNotEmpty || revenueCatKeyIos.isNotEmpty;
 
-    if (supabaseUrl.isEmpty) missingVars.add('SUPABASE_URL');
-    if (supabaseAnonKey.isEmpty) missingVars.add('SUPABASE_ANON_KEY');
-    if (googleMapsKey.isEmpty) missingVars.add('GOOGLE_MAPS_KEY_IOS / GOOGLE_MAPS_KEY_ANDROID');
+  /// True when AdMob ad unit IDs are provided (at least one banner ID).
+  static bool get isAdMobConfigured =>
+      adMobBannerIdAndroid.isNotEmpty || adMobBannerIdIos.isNotEmpty;
 
-    if (missingVars.isNotEmpty) {
-      throw Exception(
-        'Missing environment variables: ${missingVars.join(', ')}\n'
-        'Please check your .env file and ensure all required variables are set.',
-      );
-    }
-  }
+  /// True when Sentry DSN is provided.
+  static bool get isSentryConfigured => sentryDsn.isNotEmpty;
 }

@@ -5,17 +5,37 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:yu_map/app.dart';
 
 void main() {
-  testWidgets('App shows welcome text', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const YuMapApp());
-    await tester.pumpAndSettle();
+  testWidgets('App renders login screen when not authenticated',
+      (WidgetTester tester) async {
+    // YuMapApp is a ConsumerWidget and requires ProviderScope.
+    // In test environment AppConfig.isSupabaseConfigured returns false,
+    // so the auth state is unauthenticated → LoginScreen is shown.
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: YuMapApp(),
+      ),
+    );
+    await tester.pump();
 
-    // Verify welcome message is shown.
-    expect(find.text('Welcome to Yu-Map'), findsOneWidget);
+    // LoginScreen's AppBar shows 'ログイン'
+    expect(find.text('ログイン'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('App wraps with MaterialApp', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: YuMapApp(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }

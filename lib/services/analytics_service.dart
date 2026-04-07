@@ -1,61 +1,91 @@
-// lib/services/analytics_service.dart
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:yu_map/core/result/result.dart';
-import 'package:yu_map/core/result/run_catching.dart';
+import 'package:flutter/foundation.dart';
 
+/// Thin wrapper around Firebase Analytics.
+///
+/// All methods are safe to call even when Firebase is not initialised —
+/// they catch exceptions silently so the rest of the app never needs to
+/// guard calls.
 class AnalyticsService {
-  final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
+  AnalyticsService._();
+  static final AnalyticsService instance = AnalyticsService._();
 
-  Future<Result<void>> logScreenView(String screenName) async {
-    return runCatching(() => _analytics.logScreenView(screenName: screenName));
+  FirebaseAnalytics? _analytics;
+  bool _initialised = false;
+
+  /// Call once during app startup. If Firebase is not configured the
+  /// service stays in a no-op state for the lifetime of the process.
+  void initialise() {
+    try {
+      _analytics = FirebaseAnalytics.instance;
+      _initialised = true;
+    } catch (e) {
+      debugPrint('AnalyticsService: Firebase not available — disabled ($e)');
+    }
   }
 
-  Future<Result<void>> logFacilityView({
+  // ── Core events ────────────────────────────────────────────────────
+
+  Future<void> logAppOpen() => _log('app_open');
+
+  Future<void> logLogin({String method = 'email'}) =>
+      _log('login', {'method': method});
+
+  Future<void> logSignUp({String method = 'email'}) =>
+      _log('sign_up', {'method': method});
+
+  Future<void> logScreenView(String screenName) async {
+    if (!_initialised) return;
+    try {
+      await _analytics!.logScreenView(screenName: screenName);
+    } catch (e) {
+      debugPrint('AnalyticsService: logScreenView failed ($e)');
+    }
+  }
+
+  Future<void> logSearch(String query) =>
+      _log('search', {'search_term': query});
+
+  Future<void> logFacilityView({
     required String facilityId,
     required String facilityName,
-    required String facilityType,
-    required Duration viewDuration,
-  }) async {
-    return runCatching(() => _analytics.logEvent(
-      name: 'facility_view',
-      parameters: {
+  }) =>
+      _log('facility_view', {
         'facility_id': facilityId,
         'facility_name': facilityName,
-        'facility_type': facilityType,
-        'view_duration_seconds': viewDuration.inSeconds,
-      },
-    ));
-  }
+      });
 
-  Future<Result<void>> logAdWatch({
-    required String facilityId,
-    required bool completed,
-    required int watchDurationSeconds,
-  }) async {
-    return runCatching(() => _analytics.logEvent(
-      name: 'ad_watch',
-      parameters: {
-        'facility_id': facilityId,
-        'completed': completed ? 1 : 0,
-        'duration_seconds': watchDurationSeconds,
-      },
-    ));
-  }
-
-  Future<Result<void>> logReviewSubmit({
+  Future<void> logReviewSubmit({
     required String facilityId,
     required int rating,
     required int contentLength,
-    required int photoCount,
-  }) async {
-    return runCatching(() => _analytics.logEvent(
-      name: 'review_submit',
-      parameters: {
+  }) =>
+      _log('review_submit', {
         'facility_id': facilityId,
         'rating': rating,
         'content_length': contentLength,
-        'photo_count': photoCount,
-      },
-    ));
+      });
+
+  Future<void> logFavoriteToggle({
+    required String facilityId,
+    required bool added,
+  }) =>
+      _log('favorite_toggle', {
+        'facility_id': facilityId,
+        'action': added ? 'add' : 'remove',
+      });
+
+  Future<void> logCheckIn({required String facilityId}) =>
+      _log('check_in', {'facility_id': facilityId});
+
+  // ── Internal ───────────────────────────────────────────────────────
+
+  Future<void> _log(String name, [Map<String, Object>? params]) async {
+    if (!_initialised) return;
+    try {
+      await _analytics!.logEvent(name: name, parameters: params);
+    } catch (e) {
+      debugPrint('AnalyticsService: $name failed ($e)');
+    }
   }
 }

@@ -1,0 +1,45 @@
+import 'package:flutter/material.dart';
+
+/// Reusable error display with an optional retry button.
+///
+/// Named [AppErrorWidget] to avoid clashing with Flutter's built-in
+/// [ErrorWidget].
+class AppErrorWidget extends StatelessWidget {
+  const AppErrorWidget({
+    super.key,
+    required this.message,
+    this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('再試行'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

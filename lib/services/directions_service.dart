@@ -40,8 +40,8 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
   }) async {
-    final supabaseUrl = AppConfig.supabaseUrl;
-    final anonKey = AppConfig.supabaseAnonKey;
+    const supabaseUrl = AppConfig.supabaseUrl;
+    const anonKey = AppConfig.supabaseAnonKey;
     final accessToken =
         Supabase.instance.client.auth.currentSession?.accessToken;
 

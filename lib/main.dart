@@ -1,50 +1,47 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:provider/provider.dart' as provider_pkg;
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/app.dart';
-import 'providers/app_state.dart' as app_state;
-import 'firebase_options.dart';
+import 'package:yu_map/core/config/app_config.dart';
+import 'package:yu_map/services/analytics_service.dart';
+import 'package:yu_map/services/subscription_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: ".env");
-  AppConfig.validateAndLog();
+  // 1. Supabase — skipped when credentials are not provided via --dart-define.
+  if (AppConfig.isSupabaseConfigured) {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  }
 
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    anonKey: AppConfig.supabaseAnonKey,
-  );
+  // 2. AdMob — skipped when ad unit IDs are not provided.
+  if (AppConfig.isAdMobConfigured) {
+    await MobileAds.instance.initialize();
+  }
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // 3. SubscriptionService — always called; becomes a no-op when RevenueCat
+  //    keys are absent.
+  await SubscriptionService().initialize();
 
-  // AdMob 初期化
-  await MobileAds.instance.initialize();
+  // 4. AnalyticsService — always called; becomes a no-op when Firebase is
+  //    not configured.
+  AnalyticsService.instance.initialise();
 
-  final app = provider_pkg.ChangeNotifierProvider(
-    create: (_) => app_state.AppState(),
-    child: const ProviderScope(child: YuMapApp()),
-  );
-
-  // Sentry 初期化（DSNが設定されている場合のみ有効）
-  if (AppConfig.isSentryEnabled) {
+  // 5. Sentry — wraps runApp when DSN is provided so all errors are captured.
+  if (AppConfig.isSentryConfigured) {
     await SentryFlutter.init(
       (options) {
         options.dsn = AppConfig.sentryDsn;
-        options.tracesSampleRate = 0.2;
+        options.tracesSampleRate = 0.5;
       },
-      appRunner: () => runApp(app),
+      appRunner: () => runApp(const ProviderScope(child: YuMapApp())),
     );
   } else {
-    runApp(app);
+    runApp(const ProviderScope(child: YuMapApp()));
   }
 }

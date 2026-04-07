@@ -1,4 +1,3 @@
-// lib/domain/entities/user.dart
 import 'package:equatable/equatable.dart';
 
 class User extends Equatable {
