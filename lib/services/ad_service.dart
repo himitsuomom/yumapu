@@ -1,8 +1,8 @@
 // lib/services/ad_service.dart
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/logger/app_logger.dart';
 
 class AdService {
@@ -10,9 +10,7 @@ class AdService {
 
   Future<void> loadRewardedAd() async {
     await RewardedAd.load(
-      adUnitId: Platform.isAndroid 
-          ? 'ca-app-pub-3940256099942544/5224354917' // Test ID
-          : 'ca-app-pub-3940256099942544/1712485313', // Test ID
+      adUnitId: AppConfig.admobRewardedId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) => _rewardedAd = ad,

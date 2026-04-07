@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:yu_map/providers/app_state.dart';
+import 'package:yu_map/screens/sign_up_screen.dart';
 import 'package:yu_map/services/auth_service.dart';
 import 'package:yu_map/widgets/hexagon_logo.dart';
 
@@ -16,7 +17,6 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   
-  bool _isSignUp = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -50,37 +50,24 @@ class _AuthScreenState extends State<AuthScreen> {
     return null;
   }
 
-  /// 認証処理（ログイン・サインアップ）
+  /// ログイン処理
   Future<void> _handleAuthenticate() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-
-    // キーボードを閉じる
     FocusScope.of(context).unfocus();
 
     try {
-      if (_isSignUp) {
-        await AuthService.signUp(
-          _emailController.text,
-          _passwordController.text,
-        );
-      } else {
-        await AuthService.signIn(
-          _emailController.text,
-          _passwordController.text,
-        );
-      }
+      await AuthService.signIn(
+        _emailController.text,
+        _passwordController.text,
+      );
 
       if (!mounted) return;
 
-      final message = _isSignUp ? 'アカウントを作成しました！' : 'ログインに成功しました！';
-      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(message),
+          content: const Text('ログインに成功しました！'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -89,12 +76,10 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       );
 
-      // ログイン後、AppStateのロード処理を実行
       if (mounted) {
         context.read<AppState>().loadFacilities();
         context.read<AppState>().loadPosts();
       }
-
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,9 +90,7 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -192,7 +175,7 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          _isSignUp ? '新しくアカウントを作成する' : 'アカウントにログインする',
+          'アカウントにログインする',
           style: TextStyle(
             fontSize: 14,
             color: Colors.grey[600],
@@ -296,9 +279,9 @@ class _AuthScreenState extends State<AuthScreen> {
                   strokeWidth: 2.5,
                 ),
               )
-            : Text(
-                _isSignUp ? '新規登録' : 'ログイン',
-                style: const TextStyle(
+            : const Text(
+                'ログイン',
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -307,39 +290,72 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// 切り替えボタンの構築
+  /// 新規登録画面への切り替えボタン
   Widget _buildToggleButton() {
-    return TextButton(
-      onPressed: () {
-        setState(() {
-          _isSignUp = !_isSignUp;
-          // フォームの状態をリセット
-          _formKey.currentState?.reset();
-        });
-      },
-      child: Text(
-        _isSignUp ? 'すでにアカウントをお持ちの方' : '新規アカウント作成',
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFFE57373),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            'アカウントをお持ちでない方',
+            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SignUpScreen()),
+            );
+          },
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text(
+            '新規登録はこちら',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFE57373),
+              decoration: TextDecoration.underline,
+              decorationColor: Color(0xFFE57373),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  /// ソーシャルログイン処理の実装モック
-  void _handleSocialLogin(String provider) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$providerでの認証を開始します...'),
-        backgroundColor: Colors.blueGrey,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+  /// ソーシャルログイン処理（Google / Apple）
+  Future<void> _handleSocialLogin(String provider) async {
+    setState(() => _isLoading = true);
+    FocusScope.of(context).unfocus();
+
+    try {
+      if (provider == 'Google') {
+        await AuthService.signInWithGoogle();
+      } else if (provider == 'Apple') {
+        await AuthService.signInWithApple();
+      }
+      // OAuth はブラウザ経由のリダイレクトで完了するため、
+      // ここでは特にスナックバーを表示しない
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$providerログインエラー: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   /// ソーシャルログインセクションの構築
@@ -367,13 +383,13 @@ class _AuthScreenState extends State<AuthScreen> {
         _buildSocialButton(
           icon: _buildGoogleIcon(),
           label: 'Googleで続ける',
-          onPressed: () => _handleSocialLogin('Google'),
+          onPressed: _isLoading ? null : () => _handleSocialLogin('Google'),
         ),
         const SizedBox(height: 12),
         _buildSocialButton(
           icon: _buildAppleIcon(),
           label: 'Appleで続ける',
-          onPressed: () => _handleSocialLogin('Apple'),
+          onPressed: _isLoading ? null : () => _handleSocialLogin('Apple'),
         ),
       ],
     );
@@ -425,7 +441,7 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildSocialButton({
     required Widget icon,
     required String label,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return SizedBox(
       width: double.infinity,

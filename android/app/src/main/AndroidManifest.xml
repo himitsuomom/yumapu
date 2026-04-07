@@ -20,12 +20,9 @@
         android:icon="@mipmap/ic_launcher">
 
         <!-- 🗺️ Google Maps API Key 設定 -->
-        <!-- ⚠️ 重要：以下の行のYOUR_GOOGLE_MAPS_API_KEY_HEREを実際のAPIキーに書き換えてください -->
-        <!-- ↓↓↓ ここをあなたのAPIキー（AIzaSy...）に書き換える ↓↓↓ -->
         <meta-data
-            android:name="AIzaSyA4e_UqLkMEKcIM9i0SyW7LjjyyaMh-FEg"
+            android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyA4e_UqLkMEKcIM9i0SyW7LjjyyaMh-FEg" />
-        <!-- ↑↑↑ 書き換え必須箇所 ↑↑↑ -->
 
         <!-- 📢 Google AdMob 設定（テスト用ID） -->
         <meta-data

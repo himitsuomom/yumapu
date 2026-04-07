@@ -10,7 +10,7 @@ class SubscriptionService {
   StreamSubscription<CustomerInfo>? _customerInfoSubscription;
 
   Future<void> initialize() async {
-    await Purchases.setLogLevel(LogLevel.debug);
+    await Purchases.setLogLevel(LogLevel.info);
 
     PurchasesConfiguration configuration;
     if (Platform.isAndroid) {

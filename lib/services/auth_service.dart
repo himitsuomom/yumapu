@@ -1,6 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user.dart';
 
+/// Redirect URI used for OAuth callbacks — must match Info.plist URL scheme
+const _oauthRedirectUri = 'com.example.yuMap://login-callback/';
+
 class AuthService {
   static final SupabaseClient _client = Supabase.instance.client;
 
@@ -61,5 +64,21 @@ class AuthService {
   // ログアウト
   static Future<void> signOut() async {
     await _client.auth.signOut();
+  }
+
+  // Google OAuth ログイン（ブラウザ経由）
+  static Future<void> signInWithGoogle() async {
+    await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: _oauthRedirectUri,
+    );
+  }
+
+  // Apple OAuth ログイン（ブラウザ経由）
+  static Future<void> signInWithApple() async {
+    await _client.auth.signInWithOAuth(
+      OAuthProvider.apple,
+      redirectTo: _oauthRedirectUri,
+    );
   }
 }

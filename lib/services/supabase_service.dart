@@ -1,10 +1,11 @@
 // lib/services/supabase_service.dart
-// lib/services/supabase_service.dart
 import 'dart:developer' as developer;
+import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:yu_map/models/facility.dart';
+import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/models/post.dart';
-import 'package:yu_map/data/mock_data.dart';
+import 'package:yu_map/models/badge.dart';
+import 'package:yu_map/models/user_ranking.dart';
 
 /// Supabase データベースサービス
 /// Supabase接続エラー時はモックデータにフォールバック
@@ -20,8 +21,8 @@ class SupabaseService {
           .order('created_at', ascending: false);
 
       if (response.isEmpty) {
-        developer.log('No facilities found in Supabase, using mock data');
-        return mockFacilities;
+        developer.log('No facilities found in Supabase');
+        return [];
       }
 
       return (response as List)
@@ -29,8 +30,7 @@ class SupabaseService {
           .toList();
     } catch (e) {
       developer.log('Error fetching facilities from Supabase: $e');
-      developer.log('Falling back to mock data');
-      return mockFacilities;
+      return [];
     }
   }
 
@@ -43,8 +43,8 @@ class SupabaseService {
           .order('created_at', ascending: false);
 
       if (response.isEmpty) {
-        developer.log('No posts found in Supabase, using mock data');
-        return mockPosts;
+        developer.log('No posts found in Supabase');
+        return [];
       }
 
       return (response as List<dynamic>)
@@ -52,8 +52,7 @@ class SupabaseService {
           .toList();
     } catch (e) {
       developer.log('Error fetching posts from Supabase: $e');
-      developer.log('Falling back to mock data');
-      return mockPosts;
+      return [];
     }
   }
 
@@ -147,13 +146,39 @@ class SupabaseService {
     }
   }
 
-  /// 施設検索（名前で検索）
+  /// 表示範囲内の施設を取得（ビューポートクエリ）
+  /// [swLat/swLng] 南西端、[neLat/neLng] 北東端
+  static Future<List<Facility>> fetchFacilitiesInBounds({
+    required double swLat,
+    required double swLng,
+    required double neLat,
+    required double neLng,
+  }) async {
+    try {
+      final response = await _client
+          .from('facilities')
+          .select()
+          .gte('latitude', swLat)
+          .lte('latitude', neLat)
+          .gte('longitude', swLng)
+          .lte('longitude', neLng);
+
+      return (response as List<dynamic>)
+          .map((json) => Facility.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      developer.log('Error fetching facilities in bounds: $e');
+      return [];
+    }
+  }
+
+  /// 施設検索（名前 + 住所で検索）
   static Future<List<Facility>> searchFacilities(String query) async {
     try {
       final response = await _client
           .from('facilities')
           .select()
-          .ilike('name', '%$query%');
+          .or('name.ilike.%$query%,address.ilike.%$query%');
 
       if (response.isEmpty) {
         return [];
@@ -164,10 +189,7 @@ class SupabaseService {
           .toList();
     } catch (e) {
       developer.log('Error searching facilities: $e');
-      // モックデータから検索
-      return mockFacilities
-          .where((f) => f.name.contains(query))
-          .toList();
+      return [];
     }
   }
 
@@ -248,6 +270,373 @@ class SupabaseService {
       rethrow;
     }
   }
+
+  // ===== 画像アップロード =====
+
+  /// 画像ファイルをSupabase Storageにアップロードして公開URLを返す
+  /// [imageFile] アップロードする画像ファイル
+  /// 戻り値: 公開URL（失敗時は null）
+  static Future<String?> uploadPostImage(File imageFile) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return null;
+
+    try {
+      final ext = imageFile.path.split('.').last.toLowerCase();
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final storagePath = '$userId/$fileName';
+
+      await _client.storage.from('post-images').upload(
+        storagePath,
+        imageFile,
+        fileOptions: FileOptions(
+          contentType: _mimeType(ext),
+          upsert: false,
+        ),
+      );
+
+      final publicUrl =
+          _client.storage.from('post-images').getPublicUrl(storagePath);
+      return publicUrl;
+    } catch (e) {
+      developer.log('Error uploading image: $e');
+      return null;
+    }
+  }
+
+  static String _mimeType(String ext) {
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  // ===== ランキング関連 =====
+
+  /// 自分のランキング情報を取得（なければ初期レコードを作成）
+  static Future<UserRanking?> fetchMyRanking() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return null;
+
+    try {
+      final response = await _client
+          .from('user_rankings')
+          .select()
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (response == null) {
+        // 初回はレコードを作成
+        final inserted = await _client
+            .from('user_rankings')
+            .insert({'user_id': userId})
+            .select()
+            .single();
+        return UserRanking.fromJson(inserted);
+      }
+      return UserRanking.fromJson(response);
+    } catch (e) {
+      developer.log('Error fetching ranking: $e');
+      return null;
+    }
+  }
+
+  /// ランキング上位ユーザー一覧取得
+  static Future<List<RankingEntry>> fetchTopRankings({int limit = 50}) async {
+    try {
+      final response = await _client
+          .from('user_rankings')
+          .select('*, users(display_name, username, avatar_url)')
+          .order('total_points', ascending: false)
+          .limit(limit);
+
+      return (response as List<dynamic>)
+          .asMap()
+          .entries
+          .map((entry) {
+            final json = Map<String, dynamic>.from(
+                entry.value as Map<String, dynamic>);
+            // rank_positionがnullの場合は順位を補完
+            json['rank_position'] ??= entry.key + 1;
+            return RankingEntry.fromJson(json);
+          })
+          .toList();
+    } catch (e) {
+      developer.log('Error fetching rankings: $e');
+      return [];
+    }
+  }
+
+  /// 施設にチェックイン（1日1回まで）
+  /// 戻り値: チェックインできたか（重複の場合はfalse）
+  static Future<bool> checkIn(String facilityId) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('ログインが必要です');
+
+    try {
+      // 既に今日チェックイン済みか確認（UTC基準で統一）
+      final now = DateTime.now().toUtc();
+      final todayStart = DateTime.utc(now.year, now.month, now.day)
+          .toIso8601String();
+      final tomorrowStart =
+          DateTime.utc(now.year, now.month, now.day + 1).toIso8601String();
+
+      final existing = await _client
+          .from('visits')
+          .select()
+          .eq('user_id', userId)
+          .eq('facility_id', facilityId)
+          .gte('visited_at', todayStart)
+          .lt('visited_at', tomorrowStart)
+          .maybeSingle();
+
+      if (existing != null) {
+        return false; // 今日すでにチェックイン済み
+      }
+
+      // チェックイン記録を追加
+      await _client.from('visits').insert({
+        'user_id': userId,
+        'facility_id': facilityId,
+        'visited_at': DateTime.now().toIso8601String(),
+      });
+
+      // ランキングのポイントを更新
+      await _addExplorerPoints(userId, 100);
+
+      return true;
+    } catch (e) {
+      developer.log('Error checking in: $e');
+      rethrow;
+    }
+  }
+
+  /// 探索ポイントを加算
+  static Future<void> _addExplorerPoints(String userId, int points) async {
+    try {
+      // user_rankingsが存在するか確認
+      final existing = await _client
+          .from('user_rankings')
+          .select('explorer_points, visit_count, current_title, total_points')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (existing == null) {
+        await _client.from('user_rankings').insert({
+          'user_id': userId,
+          'explorer_points': points,
+          'visit_count': 1,
+          'current_title': UserRanking.titleFromPoints(points),
+        });
+      } else {
+        final newExplorer =
+            ((existing['explorer_points'] as num?)?.toInt() ?? 0) + points;
+        final newVisitCount =
+            ((existing['visit_count'] as num?)?.toInt() ?? 0) + 1;
+        await _client.from('user_rankings').update({
+          'explorer_points': newExplorer,
+          'visit_count': newVisitCount,
+          'current_title': UserRanking.titleFromPoints(
+            newExplorer +
+                ((existing['total_points'] as num?)?.toInt() ?? 0) -
+                ((existing['explorer_points'] as num?)?.toInt() ?? 0),
+          ),
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('user_id', userId);
+        // total_pointsはDB側の生成列なので直接更新不要（newTotal未使用）
+      }
+    } catch (e) {
+      developer.log('Error adding explorer points: $e');
+    }
+  }
+
+  /// ソーシャルポイントを加算（投稿・いいね獲得時）
+  static Future<void> addSocialPoints(String userId, int points,
+      {bool isReview = false}) async {
+    try {
+      final existing = await _client
+          .from('user_rankings')
+          .select('social_points, review_count, current_title, explorer_points')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (existing == null) {
+        await _client.from('user_rankings').insert({
+          'user_id': userId,
+          'social_points': points,
+          'review_count': isReview ? 1 : 0,
+          'current_title': UserRanking.titleFromPoints(points),
+        });
+      } else {
+        final newSocial =
+            ((existing['social_points'] as num?)?.toInt() ?? 0) + points;
+        final newReviewCount = isReview
+            ? ((existing['review_count'] as num?)?.toInt() ?? 0) + 1
+            : ((existing['review_count'] as num?)?.toInt() ?? 0);
+        final explorerPts =
+            (existing['explorer_points'] as num?)?.toInt() ?? 0;
+        await _client.from('user_rankings').update({
+          'social_points': newSocial,
+          'review_count': newReviewCount,
+          'current_title':
+              UserRanking.titleFromPoints(explorerPts + newSocial),
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('user_id', userId);
+      }
+    } catch (e) {
+      developer.log('Error adding social points: $e');
+    }
+  }
+
+  // ===== バッジ関連 =====
+
+  /// ユーザーの獲得済みバッジ一覧を取得
+  static Future<List<UserBadge>> fetchMyBadges() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return [];
+
+    try {
+      final response = await _client
+          .from('user_badges')
+          .select('*, badges(*)')
+          .eq('user_id', userId)
+          .order('earned_at', ascending: false);
+
+      return (response as List<dynamic>)
+          .map((json) => UserBadge.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      developer.log('Error fetching badges: $e');
+      return [];
+    }
+  }
+
+  /// 全バッジ定義を取得
+  static Future<List<Badge>> fetchAllBadges() async {
+    try {
+      final response = await _client
+          .from('badges')
+          .select()
+          .order('condition_value', ascending: true);
+
+      return (response as List<dynamic>)
+          .map((json) => Badge.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      developer.log('Error fetching all badges: $e');
+      return [];
+    }
+  }
+
+  /// ランキング情報をもとに未獲得バッジを確認して付与する
+  /// 戻り値: 新しく獲得したバッジのリスト
+  static Future<List<Badge>> checkAndAwardBadges() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return [];
+
+    try {
+      // 現在のランキング情報を取得
+      final rankingData = await _client
+          .from('user_rankings')
+          .select('visit_count, review_count, likes_received, total_points')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (rankingData == null) return [];
+
+      final visitCount = (rankingData['visit_count'] as num?)?.toInt() ?? 0;
+      final reviewCount = (rankingData['review_count'] as num?)?.toInt() ?? 0;
+      final likesReceived = (rankingData['likes_received'] as num?)?.toInt() ?? 0;
+      final totalPoints = (rankingData['total_points'] as num?)?.toInt() ?? 0;
+
+      // 全バッジ定義を取得
+      final allBadges = await fetchAllBadges();
+
+      // 既に獲得済みのバッジIDを取得
+      final earnedResponse = await _client
+          .from('user_badges')
+          .select('badge_id')
+          .eq('user_id', userId);
+      final earnedIds = (earnedResponse as List<dynamic>)
+          .map((e) => e['badge_id'] as String)
+          .toSet();
+
+      // 解除条件を満たしているが未獲得のバッジを検出
+      final newlyEarned = <Badge>[];
+      for (final badge in allBadges) {
+        if (earnedIds.contains(badge.id)) continue;
+
+        final conditionMet = switch (badge.conditionType) {
+          'visit_count'    => visitCount    >= badge.conditionValue,
+          'review_count'   => reviewCount   >= badge.conditionValue,
+          'likes_received' => likesReceived >= badge.conditionValue,
+          'total_points'   => totalPoints   >= badge.conditionValue,
+          _                => false,
+        };
+
+        if (conditionMet) {
+          // バッジを付与
+          try {
+            await _client.from('user_badges').insert({
+              'user_id': userId,
+              'badge_id': badge.id,
+              'earned_at': DateTime.now().toIso8601String(),
+            });
+            newlyEarned.add(badge);
+          } catch (e) {
+            // 重複エラーは無視
+            developer.log('Badge insert skipped: $e');
+          }
+        }
+      }
+
+      return newlyEarned;
+    } catch (e) {
+      developer.log('Error checking badges: $e');
+      return [];
+    }
+  }
+
+  // ===== 問い合わせ関連 =====
+
+  /// 問い合わせをSupabaseの inquiries テーブルに送信する
+  /// [type]     'hours_change'（営業時間変更報告）または 'add_facility'（未登録施設追加申請）
+  /// [facilityName] 施設名（文字列）
+  /// [message]  問い合わせ本文
+  /// [contact]  連絡先メールアドレス（任意）
+  /// 戻り値: 成功した場合 true、エラー時 false
+  static Future<bool> submitInquiry({
+    required String type,
+    required String facilityName,
+    required String message,
+    String? contact,
+  }) async {
+    try {
+      await _client.from('inquiries').insert({
+        'type': type,
+        'facility_name': facilityName,
+        'message': message,
+        'contact': contact,
+        'user_id': _client.auth.currentUser?.id,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      developer.log('Inquiry submitted: $type');
+      return true;
+    } catch (e) {
+      developer.log('Error submitting inquiry: $e');
+      return false;
+    }
+  }
+
+  // ===== お気に入り関連 =====
 
   /// お気に入り一覧取得
   static Future<List<Facility>> fetchFavorites() async {

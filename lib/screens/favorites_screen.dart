@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:yu_map/models/facility.dart';
+import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/providers/app_state.dart';
-import 'package:yu_map/widgets/safe_network_image.dart';
 
 /// FavoritesScreen - Displays user's favorite facilities
 class FavoritesScreen extends StatelessWidget {
@@ -85,15 +84,32 @@ class FavoritesScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // 施設タイプ別のカラープレースホルダー
+            // （Facilityモデルに画像URLフィールドがないためアイコン表示）
             Expanded(
               flex: 3,
               child: Container(
-                color: Colors.grey.shade200,
-                child: const SafeNetworkImage(
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=400&auto=format&fit=crop',
-                  fit: BoxFit.cover,
+                color: _facilityTypeColor(facility.type).withValues(alpha: 0.15),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _facilityTypeIcon(facility.type),
+                        size: 40,
+                        color: _facilityTypeColor(facility.type),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _facilityTypeLabel(facility.type),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _facilityTypeColor(facility.type),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -157,5 +173,53 @@ class FavoritesScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// 施設タイプ別のアイコン
+  IconData _facilityTypeIcon(String type) {
+    switch (type) {
+      case 'sauna':
+        return Icons.local_fire_department;
+      case 'onsen':
+        return Icons.hot_tub;
+      case 'supersento':
+        return Icons.pool;
+      case 'public_bath':
+        return Icons.bathtub;
+      default:
+        return Icons.spa;
+    }
+  }
+
+  /// 施設タイプ別のカラー
+  Color _facilityTypeColor(String type) {
+    switch (type) {
+      case 'sauna':
+        return Colors.deepOrange;
+      case 'onsen':
+        return Colors.blue;
+      case 'supersento':
+        return Colors.teal;
+      case 'public_bath':
+        return Colors.indigo;
+      default:
+        return Colors.orange;
+    }
+  }
+
+  /// 施設タイプ別のラベル
+  String _facilityTypeLabel(String type) {
+    switch (type) {
+      case 'sauna':
+        return 'サウナ';
+      case 'onsen':
+        return '温泉';
+      case 'supersento':
+        return 'スーパー銭湯';
+      case 'public_bath':
+        return '銭湯';
+      default:
+        return type;
+    }
   }
 }

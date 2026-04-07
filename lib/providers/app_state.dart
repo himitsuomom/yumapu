@@ -1,20 +1,29 @@
 import 'package:flutter/foundation.dart';
-import '../models/facility.dart';
+import '../domain/entities/facility.dart';
 import '../models/post.dart';
 import '../models/user.dart';
+import '../models/badge.dart';
+import '../models/user_ranking.dart';
 import '../services/supabase_service.dart';
 import '../services/auth_service.dart';
-import '../data/mock_data.dart';
 
 class AppState extends ChangeNotifier {
   // 状態変数
-  List<Facility> _facilities = mockFacilities;
-  List<Post> _posts = mockPosts;
+  List<Facility> _facilities = [];
+  List<Post> _posts = [];
   List<Facility> _favoriteFacilities = [];
   Set<String> _favoriteFacilityIds = {};
   UserProfile? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
+
+  // ランキング状態
+  UserRanking? _myRanking;
+  List<RankingEntry> _topRankings = [];
+
+  // バッジ状態
+  List<UserBadge> _myBadges = [];
+  List<Badge> _allBadges = [];
 
   // Getters
   List<Facility> get facilities => _facilities;
@@ -23,6 +32,10 @@ class AppState extends ChangeNotifier {
   UserProfile? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  UserRanking? get myRanking => _myRanking;
+  List<RankingEntry> get topRankings => _topRankings;
+  List<UserBadge> get myBadges => _myBadges;
+  List<Badge> get allBadges => _allBadges;
 
   /// 施設がお気に入りかチェック
   bool isFavorite(String facilityId) => _favoriteFacilityIds.contains(facilityId);
@@ -37,7 +50,7 @@ class AppState extends ChangeNotifier {
       _facilities = await SupabaseService.fetchFacilities();
     } catch (e) {
       _errorMessage = 'データの読み込みに失敗しました';
-      _facilities = mockFacilities; // 安全なフォールバック
+      _facilities = [];
     }
 
     _isLoading = false;
@@ -54,7 +67,7 @@ class AppState extends ChangeNotifier {
       _posts = await SupabaseService.fetchPosts();
     } catch (e) {
       _errorMessage = 'データの読み込みに失敗しました';
-      _posts = mockPosts; // 安全なフォールバック
+      _posts = [];
     }
 
     _isLoading = false;
@@ -85,6 +98,9 @@ class AppState extends ChangeNotifier {
       _currentUser = null;
       _favoriteFacilities = [];
       _favoriteFacilityIds = {};
+      _myRanking = null;
+      _topRankings = [];
+      _myBadges = [];
       notifyListeners();
     } catch (e) {
       _errorMessage = 'ログアウトに失敗しました';
@@ -138,8 +154,14 @@ class AppState extends ChangeNotifier {
       _favoriteFacilityIds.remove(facilityId);
       _favoriteFacilities.removeWhere((f) => f.id == facilityId);
     } else {
+      // firstWhereOrNull を使い、施設が_facilitiesにない場合は何もしない
+      // （マップのビューポート外施設がお気に入り追加されるケースへの防御）
+      final facility = _facilities.cast<Facility?>().firstWhere(
+            (f) => f?.id == facilityId,
+            orElse: () => null,
+          );
+      if (facility == null) return;
       _favoriteFacilityIds.add(facilityId);
-      final facility = _facilities.firstWhere((f) => f.id == facilityId);
       _favoriteFacilities.add(facility);
     }
     notifyListeners();
@@ -150,8 +172,11 @@ class AppState extends ChangeNotifier {
       // エラー時は元に戻す
       if (previousState) {
         _favoriteFacilityIds.add(facilityId);
-        final facility = _facilities.firstWhere((f) => f.id == facilityId);
-        _favoriteFacilities.add(facility);
+        final facility = _facilities.cast<Facility?>().firstWhere(
+              (f) => f?.id == facilityId,
+              orElse: () => null,
+            );
+        if (facility != null) _favoriteFacilities.add(facility);
       } else {
         _favoriteFacilityIds.remove(facilityId);
         _favoriteFacilities.removeWhere((f) => f.id == facilityId);
@@ -160,6 +185,77 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // ===== ランキング =====
+
+  /// 自分のランキング情報を読み込む
+  Future<void> loadMyRanking() async {
+    try {
+      _myRanking = await SupabaseService.fetchMyRanking();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'ランキング情報の読み込みに失敗しました';
+      notifyListeners();
+    }
+  }
+
+  /// トップランキング一覧を読み込む
+  Future<void> loadTopRankings() async {
+    try {
+      _topRankings = await SupabaseService.fetchTopRankings();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'ランキングの読み込みに失敗しました';
+      notifyListeners();
+    }
+  }
+
+  /// 施設にチェックイン
+  /// 戻り値: ('success'|'already'|'error', 新しく獲得したバッジリスト)
+  Future<(String, List<Badge>)> checkIn(String facilityId) async {
+    try {
+      final success = await SupabaseService.checkIn(facilityId);
+      if (success) {
+        _myRanking = await SupabaseService.fetchMyRanking();
+        notifyListeners();
+        final newBadges = await _checkBadges();
+        return ('success', newBadges);
+      }
+      return ('already', <Badge>[]);
+    } catch (e) {
+      _errorMessage = 'チェックインに失敗しました';
+      notifyListeners();
+      return ('error', <Badge>[]);
+    }
+  }
+
+  /// 自分の獲得済みバッジと全バッジ定義を読み込む
+  Future<void> loadMyBadges() async {
+    try {
+      _myBadges = await SupabaseService.fetchMyBadges();
+      _allBadges = await SupabaseService.fetchAllBadges();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'バッジ情報の読み込みに失敗しました';
+      notifyListeners();
+    }
+  }
+
+  /// バッジ解除チェックを実行して新規バッジがあれば返す
+  Future<List<Badge>> _checkBadges() async {
+    try {
+      final newBadges = await SupabaseService.checkAndAwardBadges();
+      if (newBadges.isNotEmpty) {
+        _myBadges = await SupabaseService.fetchMyBadges();
+        notifyListeners();
+      }
+      return newBadges;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ===== 投稿 =====
 
   /// 投稿を作成
   Future<bool> createPost({
@@ -192,6 +288,11 @@ class AppState extends ChangeNotifier {
         _posts.insert(0, newPost);
         notifyListeners();
         _isLoading = false;
+        // 投稿にソーシャルポイントを付与（メソッド上部で null チェック済み）
+        await SupabaseService.addSocialPoints(userId, 30, isReview: true);
+        _myRanking = await SupabaseService.fetchMyRanking();
+        notifyListeners();
+        await _checkBadges();
         return true;
       } else {
         _errorMessage = '投稿作成に失敗しました';

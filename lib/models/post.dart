@@ -17,11 +17,11 @@ class Comment {
 
   factory Comment.fromJson(Map<String, dynamic> json) {
     return Comment(
-      id: json['id'] as String,
-      user: json['user_name'] as String,
-      avatar: json['user_avatar'] as String,
-      text: json['text'] as String,
-      time: json['created_at'] as String,
+      id: json['id'] as String? ?? '',
+      user: json['user_name'] as String? ?? '削除済みユーザー',
+      avatar: json['user_avatar'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      time: json['created_at'] as String? ?? '',
     );
   }
 
@@ -65,18 +65,18 @@ class Post {
 
   factory Post.fromJson(Map<String, dynamic> json) {
     return Post(
-      id: json['id'] as String,
-      user: json['user_name'] as String,
-      avatar: json['user_avatar'] as String,
-      content: json['content'] as String,
-      time: json['created_at'] as String,
-      likes: json['likes_count'] as int,
+      id: json['id'] as String? ?? '',
+      user: json['user_name'] as String? ?? '削除済みユーザー',
+      avatar: json['user_avatar'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      time: json['created_at'] as String? ?? '',
+      likes: (json['likes_count'] as num?)?.toInt() ?? 0,
       isLiked: json['is_liked'] as bool? ?? false,
-      facilityId: json['facility_id'] as String,
-      facilityName: json['facility_name'] as String,
-      imageUrl: json['image_url'] as String,
+      facilityId: json['facility_id'] as String? ?? '',
+      facilityName: json['facility_name'] as String? ?? '施設名不明',
+      imageUrl: json['image_url'] as String? ?? '',
       comments: (json['comments'] as List?)
-              ?.map((c) => Comment.fromJson(c))
+              ?.map((c) => Comment.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [],
     );
