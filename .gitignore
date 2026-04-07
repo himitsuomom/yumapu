@@ -58,3 +58,4 @@ docs/next.md
 
 # Claude Code worktrees and config
 .claude/
+.claire/
