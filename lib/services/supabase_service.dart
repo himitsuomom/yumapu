@@ -34,12 +34,16 @@ class SupabaseService {
     }
   }
 
-  /// 投稿データ取得（エラー時はmockPostsにフォールバック）
+  /// 投稿データ取得
+  ///
+  /// 投稿一覧と同時に、ログイン中ユーザーがいいねしている投稿IDも取得して
+  /// [Post.isLiked] を正しく設定する。
   static Future<List<Post>> fetchPosts() async {
     try {
+      // 投稿をユーザー情報つきで取得
       final response = await _client
           .from('posts')
-          .select('*, users(*), facilities(*)')
+          .select('*, users(display_name, username, avatar_url)')
           .order('created_at', ascending: false);
 
       if (response.isEmpty) {
@@ -47,12 +51,31 @@ class SupabaseService {
         return [];
       }
 
-      return (response as List<dynamic>)
-          .map((json) => Post.fromJson(json as Map<String, dynamic>))
-          .toList();
+      // ログイン中ユーザーがいいねしている投稿IDを取得
+      final Set<String> likedIds = await _fetchLikedPostIds();
+
+      return (response as List<dynamic>).map((json) {
+        final postId = (json as Map<String, dynamic>)['id'] as String? ?? '';
+        return Post.fromJson(json, isLiked: likedIds.contains(postId));
+      }).toList();
     } catch (e) {
       developer.log('Error fetching posts from Supabase: $e');
       return [];
+    }
+  }
+
+  /// ログイン中ユーザーがいいねした投稿IDのセットを返す
+  static Future<Set<String>> _fetchLikedPostIds() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return {};
+    try {
+      final rows = await _client
+          .from('post_likes')
+          .select('post_id')
+          .eq('user_id', userId) as List;
+      return rows.map((r) => r['post_id'] as String).toSet();
+    } catch (_) {
+      return {};
     }
   }
 
@@ -65,19 +88,20 @@ class SupabaseService {
     String? imageUrl,
   }) async {
     try {
+      // likes_count はDB側デフォルト値(0)のため送らない
+      // is_liked はDBカラムではなくクライアント側の状態のため送らない
       final response = await _client.from('posts').insert({
         'user_id': userId,
         'facility_id': facilityId,
         'content': content,
         'facility_name': facilityName,
-        'image_url': imageUrl,
-        'likes_count': 0,
-        'is_liked': false,
-        'created_at': DateTime.now().toIso8601String(),
-      }).select();
+        if (imageUrl != null) 'image_url': imageUrl,
+      }).select('*, users(display_name, username, avatar_url)');
 
       if (response.isNotEmpty) {
-        return Post.fromJson(response.first);
+        // 新規投稿は自分の投稿なのでisLiked=false確定
+        return Post.fromJson(response.first as Map<String, dynamic>,
+            isLiked: false);
       }
       return null;
     } catch (e) {
@@ -519,13 +543,13 @@ class SupabaseService {
     }
   }
 
-  /// 全バッジ定義を取得
+  /// 全バッジ定義を取得（表示目的のみ）
   static Future<List<Badge>> fetchAllBadges() async {
     try {
       final response = await _client
           .from('badges')
           .select()
-          .order('condition_value', ascending: true);
+          .order('category', ascending: true);
 
       return (response as List<dynamic>)
           .map((json) => Badge.fromJson(json as Map<String, dynamic>))
@@ -536,71 +560,26 @@ class SupabaseService {
     }
   }
 
-  /// ランキング情報をもとに未獲得バッジを確認して付与する
-  /// 戻り値: 新しく獲得したバッジのリスト
-  static Future<List<Badge>> checkAndAwardBadges() async {
+  /// DB の check_and_grant_badges RPC を呼び出してバッジを付与する。
+  ///
+  /// バッジ付与ロジックはすべて DB 側（check_and_grant_badges 関数）で管理。
+  /// 通常のチェックイン後は visits INSERT トリガーで自動実行されるため、
+  /// アプリ側から手動で再チェックしたい場合（例: 初回起動時）にのみ呼ぶ。
+  ///
+  /// 戻り値: 新たに付与されたバッジの code 一覧
+  static Future<List<String>> checkAndAwardBadges() async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return [];
 
     try {
-      // 現在のランキング情報を取得
-      final rankingData = await _client
-          .from('user_rankings')
-          .select('visit_count, review_count, likes_received, total_points')
-          .eq('user_id', userId)
-          .maybeSingle();
-
-      if (rankingData == null) return [];
-
-      final visitCount = (rankingData['visit_count'] as num?)?.toInt() ?? 0;
-      final reviewCount = (rankingData['review_count'] as num?)?.toInt() ?? 0;
-      final likesReceived = (rankingData['likes_received'] as num?)?.toInt() ?? 0;
-      final totalPoints = (rankingData['total_points'] as num?)?.toInt() ?? 0;
-
-      // 全バッジ定義を取得
-      final allBadges = await fetchAllBadges();
-
-      // 既に獲得済みのバッジIDを取得
-      final earnedResponse = await _client
-          .from('user_badges')
-          .select('badge_id')
-          .eq('user_id', userId);
-      final earnedIds = (earnedResponse as List<dynamic>)
-          .map((e) => e['badge_id'] as String)
-          .toSet();
-
-      // 解除条件を満たしているが未獲得のバッジを検出
-      final newlyEarned = <Badge>[];
-      for (final badge in allBadges) {
-        if (earnedIds.contains(badge.id)) continue;
-
-        final conditionMet = switch (badge.conditionType) {
-          'visit_count'    => visitCount    >= badge.conditionValue,
-          'review_count'   => reviewCount   >= badge.conditionValue,
-          'likes_received' => likesReceived >= badge.conditionValue,
-          'total_points'   => totalPoints   >= badge.conditionValue,
-          _                => false,
-        };
-
-        if (conditionMet) {
-          // バッジを付与
-          try {
-            await _client.from('user_badges').insert({
-              'user_id': userId,
-              'badge_id': badge.id,
-              'earned_at': DateTime.now().toIso8601String(),
-            });
-            newlyEarned.add(badge);
-          } catch (e) {
-            // 重複エラーは無視
-            developer.log('Badge insert skipped: $e');
-          }
-        }
-      }
-
-      return newlyEarned;
+      final result = await _client.rpc(
+        'check_and_grant_badges',
+        params: {'p_user_id': userId},
+      );
+      if (result == null) return [];
+      return (result as List<dynamic>).map((e) => e as String).toList();
     } catch (e) {
-      developer.log('Error checking badges: $e');
+      developer.log('Error checking badges via RPC: $e');
       return [];
     }
   }
