@@ -105,18 +105,107 @@
 
 ### 優先度：中
 
-- [ ] チェックイン → ポイント加算 → バッジ自動付与 の動作確認・デバッグ
-- [ ] 問い合わせフォーム → Supabase `inquiries` テーブル挿入の動作確認
+- [x] **問い合わせフォーム統合**（2026-04-14 完了）
+  - `lib/features/inquiry/inquiry_screen.dart` を新規作成（Supabase直接アクセス版）
+  - 施設詳細画面に「営業時間の変更を報告する」ボタン追加
+  - 設定画面に「施設の追加を申請する」リンク追加
+  - `app.dart` に `/inquiry` ルートを追加
+- [x] **チェックイン後バッジ通知**（2026-04-14 完了）
+  - チェックイン直後にDBトリガー処理を待機（800ms）
+  - `earned_at >= checkinTime` でクエリして新規バッジを取得
+  - バッジ獲得ダイアログを表示
+- [x] **施設詳細からプランに追加**（2026-04-14 完了）
+  - `lib/models/onsen_plan.dart` 新規作成
+  - `lib/providers/plan_provider.dart` 新規作成（一覧取得・作成・施設追加/削除）
+  - 施設詳細の「湯めぐりプランに追加」ボタン → ボトムシートで選択・新規作成
+- [x] **フィルターバグ修正 + アメニティデータ投入**（2026-04-14 完了）
+  - `filter_bar.dart` で `name` → `name_ja` に修正（無言エラーを修正）
+  - `filter_bar.dart` で `value_type=number`（温度表示）を除外
+  - `facility_types` テーブルに3種類シード（温泉施設・銭湯・サウナ）
+  - `facilities.facility_type_id` を全5,231件に自動設定
+  - `facility_amenities` に8,715件投入（天然温泉・泉質・露天風呂・宿泊 etc.）
+  - `supabase/migrations/20260414000001_seed_facility_types_and_amenity_data.sql` 作成
+  - `sync_facility_location` トリガー関数の `search_path` バグを修正
+- [x] **バッジ獲得アニメーション**（2026-04-14 完了）
+  - `confetti: ^0.7.0` パッケージ追加（`pubspec.yaml`）
+  - `_BadgeCelebrationDialog` を新規実装（星型confetti + バッジ一覧 + 「やった！」ボタン）
+  - チェックイン後のバッジ通知が confetti ダイアログに変更
+- [x] **RPC関数 `get_facilities_in_bounds` を全面修正**（2026-04-14 完了）
+  - `SET search_path TO ''` が空でPostGIS関数が見つからない問題を修正
+  - `geometry`（PostGIS）→ `latitude/longitude BETWEEN` に変更（安定動作）
+  - `facility_types` の INNER JOIN → LEFT JOIN に変更（NULL安全）
+  - 戻り値に `latitude, longitude, facility_type_id, address` を追加
+  - アメニティフィルターを OR → AND に変更（複数選択で全条件一致）
+  - `supabase/migrations/20260414000002_fix_get_facilities_in_bounds.sql` 作成
+- [x] **フィルターリセットバグ修正**（2026-04-14 完了）
+  - `clearFacilityType: true` を map_screen（2箇所）と search_screen（1箇所）に適用
+  - `facilityTypeId: null` を copyWith に渡しても既存値が残るバグを修正
+- [x] **施設詳細にアメニティ表示セクションを追加**（2026-04-14 完了）
+  - `facilityAmenitiesProvider` を `facility_provider.dart` に追加
+  - `_AmenitySection` ConsumerWidget を施設詳細画面に追加
+  - カテゴリ別アイコン・カラー付きの Wrap チップ表示
+- [x] **施設詳細に営業時間・料金表示を追加**（2026-04-14 完了）
+  - `Facility` エンティティに `openingHours` と `price` フィールドを追加
+  - `FacilityService.getFacilityById` で `hours, price` カラムを SELECT
+  - 詳細画面に時計アイコン・料金アイコン付きで表示
+- [x] **posts.comments_count カラム追加 + トリガー**（2026-04-14 完了）
+  - フィードのコメント数が常に0になっていたバグを修正
+  - `comments_count` INTEGER DEFAULT 0 カラムを追加
+  - コメントINSERT/DELETE時に自動更新するトリガーを追加
+  - `supabase/migrations/20260414000005_posts_comments_count.sql` 作成
+- [x] **施設タイプを日本語表示に統一**（2026-04-14 完了）
+  - `Facility` に `facilityTypeJa` プロパティ追加（'onsen'→'温泉施設' 等）
+  - `FacilityListTile`・施設詳細・マッププレビューで `facilityTypeJa` を使用
+  - `_FacilityTypeIcon` に `public_bath` コードを追加
+  - 未使用 `AmenityConfig.dart` を削除（デッドコード）
+- [x] **confettiダイアログのレイアウト修正**（2026-04-14 完了）
+  - `Stack` 内の `AlertDialog` が上端に配置されるバグを修正
+  - `SizedBox.expand + Stack + Center` 構造に変更して画面中央に固定
 - [ ] Google Places API でリアルタイム施設詳細表示（写真・口コミ・営業時間）
 - [ ] じゃらんnet API 登録・インポート（APIキーが取れ次第）
-- [ ] 施設詳細画面から「湯めぐりプランに追加」ボタン追加
-- [ ] 泉質フィルター: 施設データ側に spring_type を実際に付与（facility_amenities への INSERT）
 - [ ] 施設画像を Unsplash プレースホルダーから実画像（Google Places / Supabase Storage）に変更
+
+- [x] **visits テーブルに created_at カラム追加**（2026-04-14 完了）
+  - `Visit.fromJson` が `created_at` を要求していたが DB に存在しなかったためクラッシュ → ALTER TABLE で追加
+  - `visit_provider.dart` を null 安全に修正（`createdAt` は `visited_at` にフォールバック）
+- [x] **visits DELETE ポリシー追加**（2026-04-14 完了）
+  - `deleteVisit()` が RLS でブロックされていた → 「自分の訪問のみ削除可能」ポリシーを追加
+- [x] **セキュリティ修正**（2026-04-14 完了）
+  - `inquiries` INSERT ポリシーを `WITH CHECK (true)` → `user_id IS NULL OR user_id = auth.uid()` に強化
+  - Storage SELECT ポリシーを「バケット一覧不可」に変更（avatars / post-images）
+  - `handle_new_user` 関数の `SET search_path TO ''` を `= public` に修正
+  - `supabase/migrations/20260414000003_security_fixes.sql` 作成
+
+- [x] **ランキング自動更新トリガー実装**（2026-04-14 完了）
+  - チェックインしても `user_rankings` が更新されない重大バグを発見・修正
+  - `update_ranking_on_visit()` - 訪問時に explorer_points（訪問×100）と称号を更新
+  - `update_ranking_on_review()` - レビュー投稿時に social_points 再計算
+  - `update_ranking_on_post()` - SNS投稿時に social_points 再計算
+  - `calc_social_points()` ヘルパー関数（レビュー×50 + 投稿×30）
+  - 称号設定: 初心者→見習い→経験者→中級者→通→愛好家→上級者→マスター→王
+  - `supabase/migrations/20260414000004_ranking_triggers.sql` 作成
 
 ### 優先度：低
 
 - [ ] Provider → Riverpod 統一（大規模リファクタ）
 - [ ] 問い合わせ管理用ダッシュボード（管理者用 Web ページ or Supabase Studio で確認）
-- [ ] バッジ獲得時のアニメーション（confetti / 祝福エフェクト）
 - [ ] ソーシャルログイン（Google / Apple）の実装
-- [ ] 投稿画像を Supabase Storage にアップロードする機能（現在は画像選択のみで保存なし）
+- [x] **iOS / Android アプリ設定修正**（2026-04-14 完了）
+  - `CFBundleDisplayName` を "Yu Map" → "湯マップ" に修正
+  - `NSPhotoLibraryAddUsageDescription` を追加（写真保存権限）
+  - `CFBundleURLSchemes` を `com.example.yuMap` → `com.yumap.app` に統一
+  - Android `android:label` を "yu_map" → "湯マップ" に修正
+  - iOS Bundle ID: `com.yumap.app`、Android Package: `com.yumap.app` で統一済み
+
+### App Store 申請前に必要な手動対応
+
+- [ ] **Google Maps API キーを本番用に制限**（Google Cloud Console）
+  - iOS: バンドルID `com.yumap.app` に制限
+  - Android: 署名キーの SHA-1 fingerprint に制限
+- [ ] **AdMob テスト ID を本番 ID に差し替え**
+  - iOS: `GADApplicationIdentifier` を本番IDに
+  - Android: `com.google.android.gms.ads.APPLICATION_ID` を本番IDに
+- [ ] **App Store Connect でアプリ情報を登録**
+  - アプリ説明文・スクリーンショット・カテゴリ（旅行/ライフスタイル）・年齢制定（4歳以上）
+- [ ] **Apple Developer Portal でプッシュ通知証明書設定**（将来的にプッシュ通知を使う場合）
+- [ ] **施設データの泉質情報を外部データソース（国土地理院等）から拡充**

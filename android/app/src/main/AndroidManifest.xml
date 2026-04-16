@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.example.yu_map">
+    package="com.yumap.app">
 
     <!-- 🔐 必要な権限設定 -->
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Android 12以下でフォトライブラリにアクセスするために必要。
+         Android 13以上はシステムの photo picker を使うため不要（maxSdkVersion="32"） -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
 
     <!-- 📱 ハードウェア要件（Google Playでのフィルタリング用） -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -15,7 +20,7 @@
     <uses-feature android:name="android.hardware.location.network" android:required="false"/>
 
     <application
-        android:label="yu_map"
+        android:label="湯マップ"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
