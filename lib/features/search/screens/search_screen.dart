@@ -36,8 +36,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _onFacilityTypeChanged(String? typeId) {
     ref.read(facilitySearchParamsProvider.notifier).update(
-          (p) => p.copyWith(facilityTypeId: typeId, page: 0),
-        );
+      (p) => typeId == null
+          // null（「すべて」チップ）は clearFacilityType:true でリセット
+          ? p.copyWith(clearFacilityType: true, page: 0)
+          : p.copyWith(facilityTypeId: typeId, page: 0),
+    );
   }
 
   /// Toggles [amenityId] in the selection while preserving all other

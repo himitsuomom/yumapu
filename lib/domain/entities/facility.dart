@@ -25,6 +25,14 @@ class Facility extends Equatable {
   final String? website;
   final Map<String, dynamic> businessHours;
   final Map<String, dynamic> priceInfo;
+
+  /// OSM の opening_hours 形式の営業時間テキスト（例: "Mo-Fr 10:00-21:00"）。
+  /// データがない施設では null になる。
+  final String? openingHours;
+
+  /// 入浴料金（円）。0 または null の場合は「不明」として扱う。
+  final int? price;
+
   final String dataSource;
   final int dataQualityScore;
 
@@ -43,6 +51,8 @@ class Facility extends Equatable {
     this.website,
     this.businessHours = const {},
     this.priceInfo = const {},
+    this.openingHours,
+    this.price,
     this.dataSource = 'government',
     this.dataQualityScore = 1,
   });
@@ -63,7 +73,10 @@ class Facility extends Equatable {
       googlePlaceId: json['google_place_id'] as String?,
       prefectureId: json['prefecture_id'] as String?,
       facilityTypeId: json['facility_type_id'] as String?,
-      facilityType: json['facility_type'] as String?,
+      // RPC は facility_type（code文字列）、テーブルクエリは
+      // facility_types(code) のネストオブジェクトで返る。両方を対応する。
+      facilityType: json['facility_type'] as String? ??
+          (json['facility_types'] as Map<String, dynamic>?)?['code'] as String?,
       latitude: lat,
       longitude: lng,
       address: json['address'] as String?,
@@ -71,6 +84,11 @@ class Facility extends Equatable {
       website: json['website'] as String?,
       businessHours: json['business_hours'] as Map<String, dynamic>? ?? {},
       priceInfo: json['price_info'] as Map<String, dynamic>? ?? {},
+      // hours は OSM の opening_hours 形式（例: "Mo-Fr 10:00-21:00"）
+      openingHours: (json['hours'] as String?)?.trim().isEmpty == true
+          ? null
+          : json['hours'] as String?,
+      price: (json['price'] as num?)?.toInt(),
       dataSource: json['data_source'] as String? ?? 'government',
       dataQualityScore: (json['data_quality_score'] as num?)?.toInt() ?? 1,
     );
@@ -79,6 +97,26 @@ class Facility extends Equatable {
   /// Returns false when both coordinates are 0.0 (data missing).
   /// Always check this before placing a map marker.
   bool get hasValidLocation => latitude != 0.0 || longitude != 0.0;
+
+  /// facility_types.code を日本語表示名に変換する。
+  /// DB の code は英語（'onsen', 'public_bath', 'sauna'）なので
+  /// ユーザー向けには日本語名を使う。
+  String get facilityTypeJa {
+    switch (facilityType?.toLowerCase()) {
+      case 'onsen':
+        return '温泉施設';
+      case 'public_bath':
+        return '銭湯・公衆浴場';
+      case 'sauna':
+        return 'サウナ';
+      default:
+        return facilityType ?? '';
+    }
+  }
+
+  /// facilityTypeJa が空でなければ true。
+  bool get hasFacilityType =>
+      facilityType != null && facilityType!.isNotEmpty;
 
   @override
   List<Object?> get props => [

@@ -7,6 +7,7 @@ import 'package:yu_map/domain/entities/user.dart' as app;
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
+import 'package:yu_map/providers/ranking_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
 import 'package:yu_map/widgets/crown_badge.dart';
 
@@ -36,13 +37,16 @@ class ProfileScreen extends ConsumerWidget {
     final userAsync = ref.watch(currentUserProfileProvider);
     final visitAsync = ref.watch(visitListProvider);
     final favoritesAsync = ref.watch(favoritesProvider);
+    final myRankingAsync = ref.watch(myRankingProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('プロフィール')),
       body: userAsync.when(
-        data: (user) => _buildContent(context, ref, user, visitAsync, favoritesAsync),
+        data: (user) => _buildContent(
+            context, ref, user, visitAsync, favoritesAsync, myRankingAsync),
         loading: () => const LoadingWidget(),
-        error: (_, __) => _buildContent(context, ref, null, visitAsync, favoritesAsync),
+        error: (_, __) => _buildContent(
+            context, ref, null, visitAsync, favoritesAsync, myRankingAsync),
       ),
     );
   }
@@ -53,6 +57,7 @@ class ProfileScreen extends ConsumerWidget {
     app.User? user,
     AsyncValue<List<Visit>> visitAsync,
     AsyncValue<Set<String>> favoritesAsync,
+    AsyncValue<RankedUser?> myRankingAsync,
   ) {
     final visitCount = visitAsync.valueOrNull?.length ?? 0;
     final favoriteCount = favoritesAsync.valueOrNull?.length ?? 0;
@@ -94,7 +99,12 @@ class ProfileScreen extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        // ── ランキング情報 ──────────────────────────────────────────────
+        if (myRankingAsync.valueOrNull != null)
+          _RankingBanner(rankedUser: myRankingAsync.value!),
+        const SizedBox(height: 16),
 
         // ── Stats cards ────────────────────────────────────────────────
         Row(
@@ -148,13 +158,76 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ),
 
-        // ── Edit profile link ──────────────────────────────────────────
+        // ── バッジ・ランキングへのリンク ───────────────────────────────
         const SizedBox(height: 24),
-        OutlinedButton(
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Text('🏅', style: TextStyle(fontSize: 16)),
+                label: const Text('バッジ'),
+                onPressed: () =>
+                    Navigator.of(context).pushNamed('/badges'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.leaderboard_outlined),
+                label: const Text('ランキング'),
+                onPressed: () =>
+                    Navigator.of(context).pushNamed('/ranking'),
+              ),
+            ),
+          ],
+        ),
+
+        // ── Edit profile / Settings links ──────────────────────────────
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('プロフィールを編集'),
+          onPressed: user == null
+              ? null
+              : () => Navigator.of(context).pushNamed(
+                    '/edit-profile',
+                    arguments: user,
+                  ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('設定'),
           onPressed: () => Navigator.of(context).pushNamed('/settings'),
-          child: const Text('設定'),
         ),
       ],
+    );
+  }
+}
+
+// ── Ranking banner ────────────────────────────────────────────────────────────
+
+class _RankingBanner extends StatelessWidget {
+  const _RankingBanner({required this.rankedUser});
+
+  final RankedUser rankedUser;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = rankedUser.ranking;
+    return Card(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: ListTile(
+        leading: const Icon(Icons.leaderboard, color: Color(0xFF1565C0)),
+        title: Text(
+          r.currentTitle,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text('${r.totalPoints} PT'
+            '  ·  ${r.rankPosition != null ? '${r.rankPosition}位' : '圏外'}'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).pushNamed('/ranking'),
+      ),
     );
   }
 }

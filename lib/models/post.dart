@@ -52,12 +52,15 @@ class Post {
   final String avatar;
   final String content;
   final String time;
-  int likes;
-  bool isLiked;
+  final int likes;
+  final bool isLiked;
   final String facilityId;
   final String facilityName;
   final String imageUrl;
   final List<Comment> comments;
+  /// DB の posts.comments_count から取得するコメント件数。
+  /// フィード一覧でコメント数を表示するための非正規化カラム。
+  final int commentsCount;
 
   Post({
     required this.id,
@@ -71,6 +74,7 @@ class Post {
     required this.facilityName,
     required this.imageUrl,
     required this.comments,
+    this.commentsCount = 0,
   });
 
   /// DBのJSONからPostを生成する。
@@ -94,12 +98,35 @@ class Post {
       likes: (json['likes_count'] as num?)?.toInt() ?? 0,
       isLiked: isLiked,
       facilityId: json['facility_id'] as String? ?? '',
-      facilityName: json['facility_name'] as String? ?? '施設名不明',
+      facilityName: json['facility_name'] as String? ?? '',
       imageUrl: json['image_url'] as String? ?? '',
       comments: (json['comments'] as List?)
               ?.map((c) => Comment.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [],
+      commentsCount: (json['comments_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// いいね数・いいね済み状態だけを変えた新しい Post を返す
+  ///
+  /// Dart では `final` でないフィールドを直接変更できるが、
+  /// 楽観的UI更新のロールバック（元に戻す）のために
+  /// 不変な新オブジェクトを作る方が安全。
+  Post copyWith({int? likes, bool? isLiked, int? commentsCount}) {
+    return Post(
+      id: id,
+      user: user,
+      avatar: avatar,
+      content: content,
+      time: time,
+      likes: likes ?? this.likes,
+      isLiked: isLiked ?? this.isLiked,
+      facilityId: facilityId,
+      facilityName: facilityName,
+      imageUrl: imageUrl,
+      comments: comments,
+      commentsCount: commentsCount ?? this.commentsCount,
     );
   }
 

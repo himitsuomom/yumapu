@@ -24,12 +24,12 @@ final facilityTypeOptionsProvider =
   if (client == null) return [];
   final rows = await client
       .from('facility_types')
-      .select('id, name')
-      .order('name') as List;
+      .select('id, name_ja')
+      .order('name_ja') as List;
   return rows
       .map((r) => FacilityTypeOption(
             id: r['id'] as String,
-            name: r['name'] as String,
+            name: r['name_ja'] as String,
           ))
       .toList();
 });
@@ -38,14 +38,17 @@ final amenityOptionsProvider =
     FutureProvider.autoDispose<List<AmenityOption>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   if (client == null) return [];
+  // value_type=number（サウナ温度・水風呂温度）はチェックボックス型ではないので除外。
+  // 泉質（spring_type）は含める。
   final rows = await client
       .from('amenities')
-      .select('id, name')
-      .order('name') as List;
+      .select('id, name_ja, category')
+      .not('value_type', 'eq', 'number')
+      .order('name_ja') as List;
   return rows
       .map((r) => AmenityOption(
             id: r['id'] as String,
-            name: r['name'] as String,
+            name: r['name_ja'] as String,
           ))
       .toList();
 });

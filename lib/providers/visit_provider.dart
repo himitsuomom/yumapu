@@ -26,14 +26,24 @@ class Visit extends Equatable {
   });
 
   factory Visit.fromJson(Map<String, dynamic> json) {
+    // visited_at は DB で DEFAULT NOW() なので基本は存在するが念のため
+    final visitedAtStr = json['visited_at'] as String?;
+    final createdAtStr = json['created_at'] as String?;
+    final visitedAt = visitedAtStr != null
+        ? DateTime.parse(visitedAtStr)
+        : DateTime.now();
+
     return Visit(
       id: json['id'] as String,
       userId: json['user_id'] as String,
       facilityId: json['facility_id'] as String,
       note: json['note'] as String?,
       rating: json['rating'] as int?,
-      visitedAt: DateTime.parse(json['visited_at'] as String),
-      createdAt: DateTime.parse(json['created_at'] as String),
+      visitedAt: visitedAt,
+      // created_at は後から追加したカラムなので visited_at にフォールバック
+      createdAt: createdAtStr != null
+          ? DateTime.parse(createdAtStr)
+          : visitedAt,
     );
   }
 

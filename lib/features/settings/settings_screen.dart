@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
+import 'package:yu_map/features/inquiry/inquiry_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/subscription_provider.dart';
 
@@ -61,6 +62,22 @@ class SettingsScreen extends ConsumerWidget {
           ],
           const Divider(height: 1),
 
+          // ── お問い合わせ section ────────────────────────────────────────
+          const _SectionHeader(label: 'フィードバック'),
+          ListTile(
+            leading: const Icon(Icons.add_location_alt_outlined),
+            title: const Text('施設の追加を申請する'),
+            subtitle: const Text('地図にない温泉・銭湯・サウナを教えてください'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).pushNamed(
+              '/inquiry',
+              arguments: {
+                'type': InquiryType.addFacility,
+              },
+            ),
+          ),
+          const Divider(height: 1),
+
           // ── App info section ───────────────────────────────────────────
           const _SectionHeader(label: 'アプリ情報'),
           const ListTile(
@@ -70,6 +87,18 @@ class SettingsScreen extends ConsumerWidget {
               AppConstants.appNameEn,
               style: TextStyle(color: Color(0xFF757575)),
             ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('プライバシーポリシー'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).pushNamed('/privacy-policy'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('利用規約'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).pushNamed('/terms'),
           ),
           const Divider(height: 1),
         ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/features/favorites/favorites_screen.dart';
+import 'package:yu_map/features/feed/screens/feed_screen.dart';
 import 'package:yu_map/features/map/screens/map_screen.dart';
 import 'package:yu_map/features/profile/screens/profile_screen.dart';
 import 'package:yu_map/features/search/screens/search_screen.dart';
@@ -8,7 +9,7 @@ import 'package:yu_map/providers/favorites_provider.dart';
 
 /// Root shell for signed-in users.
 ///
-/// Manages 4 tabs with [IndexedStack] so each tab retains its state across
+/// Manages 5 tabs with [IndexedStack] so each tab retains its state across
 /// switches. Favorites are loaded eagerly on first mount.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -24,6 +25,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static const List<Widget> _screens = [
     MapScreen(),
     SearchScreen(),
+    FeedScreen(),
     FavoritesScreen(),
     ProfileScreen(),
   ];
@@ -47,6 +49,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
+        // 5タブ以上は type を fixed にしないとラベルが消える
+        type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.map_outlined),
@@ -56,6 +60,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           BottomNavigationBarItem(
             icon: Icon(Icons.search),
             label: '検索',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dynamic_feed_outlined),
+            activeIcon: Icon(Icons.dynamic_feed),
+            label: 'フィード',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.favorite_border),

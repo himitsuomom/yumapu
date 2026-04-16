@@ -32,6 +32,11 @@ final isSignedInProvider = Provider<bool>((ref) {
   return ref.watch(sessionProvider) != null;
 });
 
+/// ゲストモード（ログインせずに地図・施設閲覧を許可するフラグ）。
+/// "ゲストとして閲覧する" ボタンで true になる。
+/// ログインすると不要だが、ログアウトしても true のままになる（再起動でリセット）。
+final guestModeProvider = StateProvider<bool>((ref) => false);
+
 /// Current user profile from the `users` table.
 final currentUserProfileProvider =
     FutureProvider.autoDispose<app.User?>((ref) async {

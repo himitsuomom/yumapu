@@ -33,9 +33,9 @@ class FacilityListTile extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (facility.facilityType != null)
+          if (facility.hasFacilityType)
             Text(
-              facility.facilityType!,
+              facility.facilityTypeJa,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: const Color(0xFF1565C0),
                   ),
@@ -57,7 +57,7 @@ class FacilityListTile extends ConsumerWidget {
         onPressed: () =>
             ref.read(favoritesProvider.notifier).toggle(facility.id),
       ),
-      isThreeLine: facility.facilityType != null && facility.address != null,
+      isThreeLine: facility.hasFacilityType && facility.address != null,
     );
   }
 }
@@ -72,9 +72,9 @@ class _FacilityTypeIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconData = switch (facilityType?.toLowerCase()) {
-      'onsen' || '温泉' => Icons.hot_tub,
+      'onsen' || '温泉施設' || '温泉' => Icons.hot_tub,
       'sauna' || 'サウナ' => Icons.local_fire_department,
-      'sento' || '銭湯' => Icons.bathtub_outlined,
+      'public_bath' || 'sento' || '銭湯・公衆浴場' || '銭湯' => Icons.bathtub_outlined,
       _ => Icons.water_drop_outlined,
     };
 

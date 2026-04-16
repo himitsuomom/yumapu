@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+// guestModeProvider は auth_provider.dart で定義済み
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -219,6 +220,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: const Text('新規登録'),
                     ),
                   ],
+                ),
+                const SizedBox(height: 24),
+
+                // ── Divider ────────────────────────────────────────────────
+                Row(
+                  children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'または',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: const Color(0xFF9E9E9E),
+                            ),
+                      ),
+                    ),
+                    const Expanded(child: Divider()),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // ── Guest mode button ──────────────────────────────────────
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.explore_outlined),
+                  label: const Text('ゲストとして閲覧する'),
+                  onPressed: isLoading
+                      ? null
+                      : () {
+                          // ゲストモードをONにしてホーム画面に遷移
+                          ref.read(guestModeProvider.notifier).state = true;
+                        },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '一部機能（チェックイン・レビューなど）はログインが必要です',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF9E9E9E),
+                      ),
                 ),
               ],
             ),

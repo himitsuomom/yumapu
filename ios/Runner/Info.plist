@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Yu Map</string>
+	<string>湯マップ</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,12 +26,20 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartobservatory._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>デバッグ時にFlutterの開発ツールがローカルネットワークを使用します。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>レビュー投稿用の写真を撮影するためにカメラを使用します。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>現在地周辺の施設を表示するために位置情報を使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>レビュー投稿用の写真を選択するために写真ライブラリを使用します。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>撮影した写真を写真ライブラリに保存するために使用します。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -68,7 +76,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.example.yuMap</string>
+				<string>com.yumap.app</string>
 			</array>
 		</dict>
 	</array>

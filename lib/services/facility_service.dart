@@ -46,9 +46,11 @@ class FacilityService {
       );
     }
 
+    // facility_types をネスト取得して facilityType（code）も一緒に返す
     var query = _client.from('facilities').select(
           'id, name, name_kana, latitude, longitude, address, phone, '
           'website, prefecture_id, facility_type_id, '
+          'facility_types(code), '
           'business_hours, price_info, data_source, data_quality_score',
         );
 
@@ -89,7 +91,9 @@ class FacilityService {
           .select(
             'id, name, name_kana, latitude, longitude, address, phone, '
             'website, prefecture_id, facility_type_id, '
-            'business_hours, price_info, data_source, data_quality_score',
+            'facility_types(code), '
+            'business_hours, price_info, hours, price, '
+            'data_source, data_quality_score',
           )
           .eq('id', id)
           .single();
@@ -108,7 +112,8 @@ class FacilityService {
 
   // ── Private helpers ─────────────────────────────────────────────────
 
-  /// Calls the PostGIS RPC to fetch facilities within a bounding box.
+  /// lat/lng の BETWEEN を使った高速バウンディングボックス検索 RPC を呼ぶ。
+  /// （PostGIS の ST_Within から lat/lng カラム直接参照に変更済み）
   Future<List<Facility>> _searchByBounds({
     required double latitude,
     required double longitude,

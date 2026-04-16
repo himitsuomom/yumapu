@@ -45,11 +45,15 @@ class FacilitySearchParams {
     int? page,
     bool clearGeo = false,
     bool clearText = false,
+    /// facilityTypeId を null にリセットしたい場合は true を渡す
+    bool clearFacilityType = false,
   }) {
     return FacilitySearchParams(
       searchQuery: clearText ? null : searchQuery ?? this.searchQuery,
       prefectureId: prefectureId ?? this.prefectureId,
-      facilityTypeId: facilityTypeId ?? this.facilityTypeId,
+      // clearFacilityType=true なら null、それ以外は渡した値 or 既存値
+      facilityTypeId:
+          clearFacilityType ? null : facilityTypeId ?? this.facilityTypeId,
       amenityIds: amenityIds ?? this.amenityIds,
       latitude: clearGeo ? null : latitude ?? this.latitude,
       longitude: clearGeo ? null : longitude ?? this.longitude,
@@ -88,4 +92,50 @@ final facilityDetailProvider =
   final service = ref.watch(facilityServiceProvider);
   if (service == null) return null;
   return service.getFacilityById(id);
+});
+
+// ── Facility amenities ────────────────────────────────────────────────────────
+
+/// 施設のアメニティ一覧を取得する。
+/// facility_amenities テーブルと amenities テーブルを JOIN して
+/// 「この施設にある設備・泉質」のリストを返す。
+class FacilityAmenity {
+  final String code;
+  final String nameJa;
+  final String category;
+
+  const FacilityAmenity({
+    required this.code,
+    required this.nameJa,
+    required this.category,
+  });
+
+  factory FacilityAmenity.fromJson(Map<String, dynamic> json) {
+    final amenity = json['amenities'] as Map<String, dynamic>? ?? json;
+    return FacilityAmenity(
+      code: amenity['code'] as String? ?? '',
+      nameJa: amenity['name_ja'] as String? ?? '',
+      category: amenity['category'] as String? ?? '',
+    );
+  }
+}
+
+final facilityAmenitiesProvider =
+    FutureProvider.autoDispose.family<List<FacilityAmenity>, String>(
+        (ref, facilityId) async {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return [];
+  try {
+    final rows = await client
+        .from('facility_amenities')
+        .select('amenities(code, name_ja, category)')
+        .eq('facility_id', facilityId)
+        .eq('value', 'true') as List;
+    return rows
+        .map((r) => FacilityAmenity.fromJson(r as Map<String, dynamic>))
+        .where((a) => a.nameJa.isNotEmpty)
+        .toList();
+  } catch (_) {
+    return [];
+  }
 });
