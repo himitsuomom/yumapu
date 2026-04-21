@@ -10,7 +10,8 @@
 //   {"type":"spring_all","count":8}
 
 /// バッジ定義モデル（DB の badges テーブルに対応）
-class Badge {
+/// Flutter Material の Badge ウィジェットと名前衝突するため AppBadge と命名。
+class AppBadge {
   final String id;
   final String code;
   final String nameJa;
@@ -26,7 +27,7 @@ class Badge {
   /// Flutter 側では表示目的のみに使用する。
   final Map<String, dynamic> requirements;
 
-  const Badge({
+  const AppBadge({
     required this.id,
     required this.code,
     required this.nameJa,
@@ -37,9 +38,9 @@ class Badge {
     this.requirements = const {},
   });
 
-  factory Badge.fromJson(Map<String, dynamic> json) {
+  factory AppBadge.fromJson(Map<String, dynamic> json) {
     final reqs = json['requirements'] as Map<String, dynamic>? ?? {};
-    return Badge(
+    return AppBadge(
       id: json['id'] as String,
       code: json['code'] as String,
       nameJa: json['name_ja'] as String,
@@ -101,7 +102,7 @@ class Badge {
 class UserBadge {
   final String id;
   final String userId;
-  final Badge badge;
+  final AppBadge badge;
   final DateTime earnedAt;
 
   const UserBadge({
@@ -115,7 +116,7 @@ class UserBadge {
     return UserBadge(
       id: json['id'] as String,
       userId: json['user_id'] as String,
-      badge: Badge.fromJson(json['badges'] as Map<String, dynamic>),
+      badge: AppBadge.fromJson(json['badges'] as Map<String, dynamic>),
       earnedAt: DateTime.parse(json['earned_at'] as String),
     );
   }

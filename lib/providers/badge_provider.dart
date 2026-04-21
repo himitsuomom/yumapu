@@ -31,7 +31,7 @@ final myBadgesProvider =
 /// 全バッジ定義一覧（カテゴリ・名前順）
 /// 未獲得バッジも含めて表示する場合に使用する
 final allBadgesProvider =
-    FutureProvider.autoDispose<List<Badge>>((ref) async {
+    FutureProvider.autoDispose<List<AppBadge>>((ref) async {
   final client = ref.read(supabaseClientProvider);
   if (client == null) return [];
   try {
@@ -41,7 +41,7 @@ final allBadgesProvider =
         .order('category')
         .order('name_ja');
     return (data as List)
-        .map((e) => Badge.fromJson(e as Map<String, dynamic>))
+        .map((e) => AppBadge.fromJson(e as Map<String, dynamic>))
         .toList();
   } catch (_) {
     return [];

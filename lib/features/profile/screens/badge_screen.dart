@@ -137,13 +137,13 @@ class _AllBadgeList extends StatelessWidget {
     required this.earnedIds,
   });
 
-  final List<Badge> allBadges;
+  final List<AppBadge> allBadges;
   final Set<String> earnedIds;
 
   @override
   Widget build(BuildContext context) {
     // カテゴリごとにグループ化
-    final Map<String, List<Badge>> grouped = {};
+    final Map<String, List<AppBadge>> grouped = {};
     for (final badge in allBadges) {
       final cat = badge.categoryLabel;
       grouped.putIfAbsent(cat, () => []).add(badge);
@@ -204,7 +204,7 @@ class _BadgeTile extends StatelessWidget {
     required this.isEarned,
   });
 
-  final Badge badge;
+  final AppBadge badge;
   final DateTime? earnedAt;
   final DateFormat? dateFormat;
   final bool isEarned;
@@ -315,7 +315,7 @@ class _BadgeTile extends StatelessWidget {
 class _BadgeIcon extends StatelessWidget {
   const _BadgeIcon({required this.badge, required this.size});
 
-  final Badge badge;
+  final AppBadge badge;
   final double size;
 
   @override
