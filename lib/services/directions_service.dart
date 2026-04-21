@@ -5,8 +5,9 @@
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
 
@@ -106,14 +107,15 @@ class DirectionsService {
       final boundsData = route['bounds'] as Map<String, dynamic>;
       final northeast = boundsData['northeast'] as Map<String, dynamic>;
       final southwest = boundsData['southwest'] as Map<String, dynamic>;
+      // flutter_map の LatLngBounds は LatLngBounds(corner1, corner2) の形式
       final bounds = LatLngBounds(
-        northeast: LatLng(
-          (northeast['lat'] as num).toDouble(),
-          (northeast['lng'] as num).toDouble(),
-        ),
-        southwest: LatLng(
+        LatLng(
           (southwest['lat'] as num).toDouble(),
           (southwest['lng'] as num).toDouble(),
+        ),
+        LatLng(
+          (northeast['lat'] as num).toDouble(),
+          (northeast['lng'] as num).toDouble(),
         ),
       );
 

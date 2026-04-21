@@ -3,7 +3,8 @@ import 'dart:math' as math;
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/widgets/banner_ad_widget.dart';
@@ -257,23 +258,46 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
               background: facility.hasValidLocation
-                  ? GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target:
-                            LatLng(facility.latitude, facility.longitude),
-                        zoom: AppConstants.detailZoom,
-                      ),
-                      markers: {
-                        Marker(
-                          markerId: MarkerId(facility.id),
-                          position:
-                              LatLng(facility.latitude, facility.longitude),
-                          infoWindow: InfoWindow(title: facility.name),
+                  // OpenStreetMap タイル（APIキー不要・完全無料）
+                  ? FlutterMap(
+                      options: MapOptions(
+                        initialCenter: ll.LatLng(
+                            facility.latitude, facility.longitude),
+                        initialZoom: AppConstants.detailZoom,
+                        interactionOptions: const InteractionOptions(
+                          // ヘッダー画像として使うため操作を無効化
+                          flags: InteractiveFlag.none,
                         ),
-                      },
-                      scrollGesturesEnabled: false,
-                      zoomControlsEnabled: false,
-                      myLocationButtonEnabled: false,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.yumap.app',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: ll.LatLng(
+                                  facility.latitude, facility.longitude),
+                              width: 44,
+                              height: 44,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF1565C0),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Center(
+                                  child: Text('♨️',
+                                      style: TextStyle(fontSize: 20)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     )
                   : ColoredBox(
                       color: Colors.grey.shade200,

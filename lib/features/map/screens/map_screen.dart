@@ -1,17 +1,20 @@
 // lib/features/map/screens/map_screen.dart
 //
-// マップ画面
-// Google Maps 上に温浴施設マーカーを表示する。
+// マップ画面（OpenStreetMap / flutter_map 版）
+// APIキー不要・完全無料の OpenStreetMap タイルを使用。
 // - 起動時に現在地周辺 5km を初期検索
-// - カメラが止まるたびに新しい中心座標で再検索（onCameraIdle）
+// - カメラ停止後 800ms で再検索（onPositionChanged + debounce タイマー）
 // - フィルターFABでアメニティ・施設タイプを絞り込める
+// - 現在地ボタンで地図を現在地に移動する
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
@@ -26,21 +29,22 @@ class MapScreen extends ConsumerStatefulWidget {
 }
 
 class _MapScreenState extends ConsumerState<MapScreen> {
-  GoogleMapController? _mapController;
+  late final MapController _mapController;
   final _clusteringService = MapClusteringService();
-  Set<Marker> _markers = {};
+  List<Marker> _markers = [];
 
   /// 最後に検索したカメラ中心座標。
-  /// onCameraIdle で大きく移動したときだけ再検索するための比較用。
+  /// 大きく移動したときだけ再検索するための比較用。
   LatLng? _lastSearchCenter;
 
-  /// カメラが動いている最中の最新位置（onCameraMove で更新）。
-  CameraPosition? _currentCameraPosition;
+  /// カメラが動いている最中の最新位置。
+  MapCamera? _currentCamera;
 
-  static const _defaultPosition = CameraPosition(
-    target: LatLng(AppConstants.defaultLat, AppConstants.defaultLng),
-    zoom: AppConstants.defaultZoom,
-  );
+  /// debounce（ちょっと待つ）タイマー。地図が止まった 800ms 後に再検索する。
+  Timer? _idleTimer;
+
+  static const _defaultCenter =
+      LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
 
   /// カメラが何m移動したら再検索するかの閾値（2km）
   static const _reloadThresholdMeters = 2000.0;
@@ -48,12 +52,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
     _initLocation();
   }
 
   @override
   void dispose() {
-    _mapController?.dispose();
+    _idleTimer?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -70,9 +76,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             radiusMeters: 5000,
           ),
         );
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(latLng, 13),
-    );
+    // flutter_map のカメラ移動
+    _mapController.move(latLng, 13);
   }
 
   /// 現在地を取得する。権限なし・タイムアウトは日本中心にフォールバック。
@@ -84,7 +89,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        return const LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
+        return _defaultCenter;
       }
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
@@ -92,31 +97,40 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       );
       return LatLng(position.latitude, position.longitude);
     } catch (_) {
-      return const LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
+      return _defaultCenter;
     }
   }
 
-  // ── Camera idle → re-search ───────────────────────────────────────────────
+  // ── Camera → re-search ────────────────────────────────────────────────────
 
-  /// カメラが止まったとき呼ばれる。
-  /// 前回の検索中心から _reloadThresholdMeters 以上移動していれば再検索する。
-  void _onCameraIdle() {
-    final pos = _currentCameraPosition;
-    if (pos == null) return;
+  /// カメラ位置が変わるたびに呼ばれる。
+  /// debounce タイマーで 800ms 静止後に再検索する。
+  void _onPositionChanged(MapCamera camera, bool hasGesture) {
+    _currentCamera = camera;
+    _idleTimer?.cancel();
+    _idleTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted) return;
+      _onMapIdle();
+    });
+  }
 
-    final newCenter = pos.target;
+  /// 地図が静止したとき呼ばれる。
+  void _onMapIdle() {
+    final camera = _currentCamera;
+    if (camera == null) return;
+
+    final newCenter = camera.center;
     final last = _lastSearchCenter;
 
-    // 移動距離を計算（ハーバーサイン法の近似）
-    bool shouldReload = last == null ||
+    final shouldReload = last == null ||
         _distanceMeters(last, newCenter) > _reloadThresholdMeters;
 
     if (!shouldReload) return;
 
     _lastSearchCenter = newCenter;
 
-    // ズームレベルに応じて検索半径を変える（遠ければ広く、近ければ狭く）
-    final zoom = pos.zoom;
+    // ズームレベルに応じて検索半径を変える
+    final zoom = camera.zoom;
     final radius = zoom >= 14
         ? 3000.0
         : zoom >= 12
@@ -134,9 +148,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         );
   }
 
-  /// 2点間の距離（m）を概算する（精度：数%以内）。
+  /// 2点間の距離（m）を概算する（ハーバーサイン法）
   double _distanceMeters(LatLng a, LatLng b) {
-    const r = 6371000.0; // 地球半径（m）
+    const r = 6371000.0;
     final dLat = (b.latitude - a.latitude) * math.pi / 180;
     final dLng = (b.longitude - a.longitude) * math.pi / 180;
     final sinLat = math.sin(dLat / 2);
@@ -188,9 +202,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     ref.listen<AsyncValue<List<Facility>>>(
       facilityListProvider,
       (previous, next) {
-        final prevList = previous?.valueOrNull;
         final nextList = next.valueOrNull;
-        if (nextList != null && nextList != prevList) {
+        if (nextList != null && nextList != previous?.valueOrNull) {
           _updateMarkers(nextList);
         }
       },
@@ -204,18 +217,29 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // ── Google Map ─────────────────────────────────────────────────
-          GoogleMap(
-            initialCameraPosition: _defaultPosition,
-            markers: _markers,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            onMapCreated: (controller) => _mapController = controller,
-            onCameraMove: (pos) => _currentCameraPosition = pos,
-            onCameraIdle: _onCameraIdle,
+          // ── FlutterMap（OpenStreetMap タイル）───────────────────────
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _defaultCenter,
+              initialZoom: AppConstants.defaultZoom,
+              onPositionChanged: _onPositionChanged,
+            ),
+            children: [
+              // OpenStreetMap タイルレイヤー（APIキー不要・完全無料）
+              TileLayer(
+                urlTemplate:
+                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.yumap.app',
+                // タイルのキャッシュ設定（オフライン対応のため最大256枚保持）
+                maxNativeZoom: 18,
+              ),
+              // 施設マーカーレイヤー
+              MarkerLayer(markers: _markers),
+            ],
           ),
 
-          // ── ローディングインジケーター ─────────────────────────────────
+          // ── ローディングインジケーター ─────────────────────────────
           if (isLoading)
             const Positioned(
               top: 60,
@@ -235,7 +259,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ),
             ),
 
-          // ── フィルター中バナー（フィルターが有効のとき表示） ───────────
+          // ── フィルター中バナー ────────────────────────────────────
           if (hasFilter)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -244,8 +268,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               child: Card(
                 color: Theme.of(context).colorScheme.primaryContainer,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   child: Row(
                     children: [
                       Icon(
@@ -286,10 +310,22 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 ),
               ),
             ),
+
+          // ── 現在地ボタン（右下）──────────────────────────────────
+          Positioned(
+            bottom: 96,
+            right: 16,
+            child: FloatingActionButton.small(
+              heroTag: 'my_location_fab',
+              onPressed: _initLocation,
+              tooltip: '現在地',
+              child: const Icon(Icons.my_location),
+            ),
+          ),
         ],
       ),
 
-      // ── フィルターFAB ─────────────────────────────────────────────────
+      // ── フィルターFAB（左下）──────────────────────────────────────
       floatingActionButton: FloatingActionButton(
         onPressed: _showFilterSheet,
         tooltip: 'フィルター',
@@ -304,8 +340,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
 // ── Filter bottom sheet ───────────────────────────────────────────────────────
 
-/// マップ用フィルターボトムシート。
-/// SearchScreen と同じ FilterBar ウィジェットを流用する。
 class _FilterSheet extends ConsumerWidget {
   const _FilterSheet();
 
@@ -320,7 +354,6 @@ class _FilterSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ドラッグハンドル
             Center(
               child: Container(
                 width: 40,
@@ -332,7 +365,6 @@ class _FilterSheet extends ConsumerWidget {
                 ),
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -345,7 +377,6 @@ class _FilterSheet extends ConsumerWidget {
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  // フィルターをすべてリセットするボタン
                   if (params.facilityTypeId != null ||
                       params.amenityIds.isNotEmpty)
                     TextButton(
@@ -365,10 +396,7 @@ class _FilterSheet extends ConsumerWidget {
                 ],
               ),
             ),
-
             const SizedBox(height: 8),
-
-            // FilterBar = 施設タイプ + アメニティのチップ行
             FilterBar(
               selectedFacilityTypeId: params.facilityTypeId,
               selectedAmenityIds: params.amenityIds,
@@ -389,9 +417,7 @@ class _FilterSheet extends ConsumerWidget {
                 });
               },
             ),
-
             const SizedBox(height: 16),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
@@ -425,7 +451,6 @@ class _FacilityPreviewSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Drag handle
             Center(
               child: Container(
                 width: 40,
@@ -437,7 +462,6 @@ class _FacilityPreviewSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            // Facility name
             Text(
               facility.name,
               style: Theme.of(context)
@@ -456,8 +480,8 @@ class _FacilityPreviewSheet extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.location_on_outlined, size: 16,
-                      color: Color(0xFF757575)),
+                  const Icon(Icons.location_on_outlined,
+                      size: 16, color: Color(0xFF757575)),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(

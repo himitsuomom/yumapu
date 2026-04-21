@@ -11,6 +11,10 @@ import 'package:yu_map/providers/favorites_provider.dart';
 ///
 /// Manages 5 tabs with [IndexedStack] so each tab retains its state across
 /// switches. Favorites are loaded eagerly on first mount.
+///
+/// **遅延ロード方式**: タブを初めて訪問したときにのみ画面を生成する。
+/// これにより MapScreen（Google Maps SDK）が起動直後にビルドされず、
+/// Maps SDK の APIキー検証クラッシュをタップ時まで遅延できる。
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -19,16 +23,33 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  int _currentIndex = 0;
+  // 検索タブ（index=1）をデフォルトにする。
+  // マップ（index=0）は Google Maps SDK の APIキーが正しく設定されるまで
+  // ユーザーがタップしない限りビルドされない。
+  int _currentIndex = 1;
 
-  // All screens are kept alive via IndexedStack — no state is lost on tab switch.
-  static const List<Widget> _screens = [
-    MapScreen(),
-    SearchScreen(),
-    FeedScreen(),
-    FavoritesScreen(),
-    ProfileScreen(),
-  ];
+  // 訪問済みのタブ番号を記録する。
+  // IndexedStack の子として SizedBox.shrink() を置いておき、
+  // 初めて訪問したタイミングで実際の画面ウィジェットに差し替える。
+  final Set<int> _visitedIndices = {1};
+
+  /// タブ番号に対応する画面ウィジェットを返す。
+  Widget _buildScreen(int index) {
+    switch (index) {
+      case 0:
+        return const MapScreen();
+      case 1:
+        return const SearchScreen();
+      case 2:
+        return const FeedScreen();
+      case 3:
+        return const FavoritesScreen();
+      case 4:
+        return const ProfileScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
 
   @override
   void initState() {
@@ -44,11 +65,20 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        // 訪問済みのタブだけ実際の画面を生成し、未訪問は空ウィジェットにする
+        children: List.generate(5, (index) {
+          if (!_visitedIndices.contains(index)) {
+            return const SizedBox.shrink();
+          }
+          return _buildScreen(index);
+        }),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) => setState(() {
+          _visitedIndices.add(index); // 訪問済みとしてマーク
+          _currentIndex = index;
+        }),
         // 5タブ以上は type を fixed にしないとラベルが消える
         type: BottomNavigationBarType.fixed,
         items: const [

@@ -23,9 +23,9 @@ dependencies:
   # Supabase
   supabase_flutter: ^2.0.0
   
-  # Maps
-  google_maps_flutter: ^2.5.0
-  google_maps_cluster_manager: ^3.0.0
+  # Maps（APIキー不要・完全無料）
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   geolocator: ^10.0.0
   
   # UI

@@ -65,8 +65,6 @@
 	<true/>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-3940256099942544~1458002511</string>
-	<key>GMSApiKey</key>
-	<string>AIzaSyA4e_UqLkMEKcIM9i0SyW7LjjyyaMh-FEg</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>CFBundleURLTypes</key>
