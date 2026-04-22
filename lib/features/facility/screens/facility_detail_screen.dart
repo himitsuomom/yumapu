@@ -11,8 +11,11 @@ import 'package:yu_map/core/widgets/banner_ad_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/features/facility/screens/facility_report_screen.dart';
+import 'package:yu_map/features/facility/screens/owner_facility_edit_screen.dart';
+import 'package:yu_map/features/facility/screens/owner_registration_screen.dart';
 import 'package:yu_map/features/facility/widgets/review_card.dart';
-import 'package:yu_map/features/inquiry/inquiry_screen.dart';
+import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
 import 'package:yu_map/models/badge.dart';
 import 'package:yu_map/models/onsen_plan.dart';
 import 'package:yu_map/providers/auth_provider.dart';
@@ -145,16 +148,41 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
     }
   }
 
-  // ── Inquiry navigation ────────────────────────────────────────────────────
+  // ── Report / Owner navigation ─────────────────────────────────────────────
 
-  void _openInquiry(Facility facility) {
+  /// 施設情報の誤りを報告する画面へ遷移（ログイン不要）
+  void _openFacilityReport(Facility facility) {
     Navigator.of(context).pushNamed(
-      '/inquiry',
+      '/facility-report',
       arguments: {
-        'type': InquiryType.hoursChange,
+        'facilityId': facility.id,
         'facilityName': facility.name,
       },
     );
+  }
+
+  /// オーナー登録申請画面へ遷移（ログイン必須・画面内でチェック）
+  void _openOwnerRegistration(Facility facility) {
+    Navigator.of(context).pushNamed(
+      '/owner-registration',
+      arguments: {
+        'facilityId': facility.id,
+        'facilityName': facility.name,
+      },
+    );
+  }
+
+  /// 施設情報編集画面へ遷移（承認済みオーナーのみ）
+  /// pop 時に true が返ってきたら施設情報を再取得する
+  Future<void> _openOwnerFacilityEdit(Facility facility) async {
+    final updated = await Navigator.of(context).pushNamed(
+      '/owner/facility-edit',
+      arguments: facility,
+    );
+    if (updated == true) {
+      // 編集が保存されたので施設データをリフレッシュ（providerを無効化）
+      ref.invalidate(facilityDetailProvider(facility.id));
+    }
   }
 
   // ── Plan bottom sheet ─────────────────────────────────────────────────────
@@ -179,10 +207,11 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => _ReviewSheet(
+      builder: (_) => ReviewBottomSheet(
         facilityId: facility.id,
         onSubmitted: () {
           ref.invalidate(reviewListProvider(facility.id));
+          ref.invalidate(reviewCountProvider(facility.id));
         },
       ),
     );
@@ -373,19 +402,6 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                         onPressed: () => _showAddToPlanSheet(facility),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    // 3行目: 問い合わせ
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.report_problem_outlined, size: 18),
-                        label: const Text('営業時間の変更を報告する'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.grey.shade700,
-                        ),
-                        onPressed: () => _openInquiry(facility),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -394,6 +410,80 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           // ── Amenities ─────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: _AmenitySection(facilityId: facility.id),
+          ),
+
+          // ── オーナー専用: 施設情報編集ボタン（承認済みオーナーのみ表示）──
+          SliverToBoxAdapter(
+            child: Consumer(
+              builder: (context, ref, _) {
+                final isOwnerAsync =
+                    ref.watch(isApprovedOwnerProvider(facility.id));
+                final isOwner = isOwnerAsync.valueOrNull ?? false;
+                if (!isOwner) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: FilledButton.icon(
+                    onPressed: () => _openOwnerFacilityEdit(facility),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('施設情報を編集する'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // ── 施設情報の改善（ログイン不要・常時表示）──────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '施設情報の改善に協力する',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      // 情報を報告する（ゲスト可）
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.flag_outlined, size: 17),
+                          label: const Text('情報を報告する'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.grey.shade700,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onPressed: () => _openFacilityReport(facility),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // オーナー登録（画面内でログインチェック）
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.business_outlined, size: 17),
+                          label: const Text('オーナー登録'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.grey.shade700,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onPressed: () => _openOwnerRegistration(facility),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
 
           // ── Reviews header ─────────────────────────────────────────────
@@ -838,144 +928,6 @@ class _BadgeCelebrationDialogState extends State<_BadgeCelebrationDialog> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Review bottom sheet ───────────────────────────────────────────────────────
-
-class _ReviewSheet extends ConsumerStatefulWidget {
-  const _ReviewSheet({required this.facilityId, required this.onSubmitted});
-
-  final String facilityId;
-  final VoidCallback onSubmitted;
-
-  @override
-  ConsumerState<_ReviewSheet> createState() => _ReviewSheetState();
-}
-
-class _ReviewSheetState extends ConsumerState<_ReviewSheet> {
-  final _contentController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-  int _rating = 3;
-
-  @override
-  void dispose() {
-    _contentController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    await ref.read(reviewNotifierProvider.notifier).postReview(
-          facilityId: widget.facilityId,
-          content: _contentController.text.trim(),
-          rating: _rating,
-        );
-    if (!mounted) return;
-    final reviewState = ref.read(reviewNotifierProvider);
-    reviewState.whenOrNull(
-      data: (_) {
-        widget.onSubmitted();
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('レビューを投稿しました')),
-        );
-      },
-      error: (e, _) => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: Colors.red,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isLoading = ref.watch(reviewNotifierProvider) is AsyncLoading;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        16,
-        24,
-        MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'レビューを書く',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            // Star rating selector
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(5, (i) {
-                final star = i + 1;
-                return IconButton(
-                  icon: Icon(
-                    star <= _rating ? Icons.star : Icons.star_border,
-                    color: const Color(0xFFFFC107),
-                    size: 32,
-                  ),
-                  onPressed: () => setState(() => _rating = star),
-                );
-              }),
-            ),
-            const SizedBox(height: 12),
-            // Review text field
-            TextFormField(
-              controller: _contentController,
-              maxLines: 5,
-              maxLength: AppConstants.maxReviewLength,
-              enabled: !isLoading,
-              decoration: const InputDecoration(
-                hintText: '施設の感想をお書きください（10文字以上）',
-                alignLabelWithHint: true,
-              ),
-              validator: (v) {
-                if (v == null || v.trim().length < AppConstants.minReviewLength) {
-                  return '${AppConstants.minReviewLength}文字以上で入力してください';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: isLoading ? null : _submit,
-              child: isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('投稿する'),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -19,6 +19,26 @@ final reviewListProvider =
   return rows.map((r) => Review.fromJson(r as Map<String, dynamic>)).toList();
 });
 
+/// 施設のレビュー総件数を正確に取得する。
+///
+/// [reviewListProvider] は表示用で上位 [AppConstants.pageSize] 件に制限されているため、
+/// 21件以上の施設では件数が不正確になる。このプロバイダーは ID のみ取得して
+/// 正確な総件数を返す（データ量が最小限で済む）。
+final reviewCountProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, facilityId) async {
+  final client = ref.read(supabaseClientProvider);
+  if (client == null) return 0;
+  try {
+    final rows = await client
+        .from('reviews')
+        .select('id')
+        .eq('facility_id', facilityId) as List;
+    return rows.length;
+  } catch (_) {
+    return 0;
+  }
+});
+
 // ── Review actions ───────────────────────────────────────────────────────────
 
 class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
