@@ -116,12 +116,12 @@ class _FacilityPreviewSheetState
     final amenitiesAsync = ref.watch(_facilityAmenitiesProvider(facility.id));
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.60,
+      initialChildSize: 0.45,
       minChildSize: 0.30,
       maxChildSize: 0.92,
       expand: false,
       snap: true,
-      snapSizes: const [0.60, 0.92],
+      snapSizes: const [0.45, 0.92],
       builder: (context, scrollController) {
         return Container(
           decoration: const BoxDecoration(
@@ -161,264 +161,241 @@ class _FacilityPreviewSheetState
                 ),
               ),
 
-              // ── 施設名 + タイプバッジ + 評価 + お気に入り ────────────
+              // ── 施設名 + タイプバッジ + 評価 + アメニティ + アクション + お気に入り ────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 4, 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // タイプカラーのアクセント縦線
-                      Container(
-                        width: 4,
-                        height: 58,
-                        margin: const EdgeInsets.only(right: 10),
-                        decoration: BoxDecoration(
-                          color: typeColor,
-                          borderRadius: BorderRadius.circular(2),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // タイプカラーのアクセント縦線（IntrinsicHeightで高さを自動調整）
+                        Container(
+                          width: 4,
+                          margin: const EdgeInsets.only(right: 10),
+                          decoration: BoxDecoration(
+                            color: typeColor,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 施設タイプバッジ
-                            if (facility.hasFacilityType)
-                              Container(
-                                margin: const EdgeInsets.only(bottom: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color:
-                                      typeColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _emojiForType(
-                                          facility.facilityType),
-                                      style:
-                                          const TextStyle(fontSize: 11),
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      facility.facilityTypeJa,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: typeColor,
-                                        fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 施設タイプバッジ
+                              if (facility.hasFacilityType)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: typeColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _emojiForType(facility.facilityType),
+                                        style: const TextStyle(fontSize: 11),
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        facility.facilityTypeJa,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: typeColor,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              // 施設名
+                              Text(
+                                facility.name,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.2,
                                 ),
                               ),
-                            // 施設名
-                            Text(
-                              facility.name,
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                height: 1.2,
-                              ),
-                            ),
-                            // 星評価（クチコミデータがあれば表示）
-                            // count は reviewCountProvider から取得して正確な件数を表示する
-                            // （reviewListProvider は表示用で20件制限があるため件数が不正確）
-                            reviewsAsync.whenOrNull(
-                              data: (reviews) {
-                                if (reviews.isEmpty) {
+                              // 星評価（クチコミデータがあれば表示）
+                              reviewsAsync.whenOrNull(
+                                data: (reviews) {
+                                  if (reviews.isEmpty) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        'クチコミなし',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[400],
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  final avg = reviews
+                                          .map((r) => r.rating)
+                                          .fold(0, (a, b) => a + b) /
+                                      reviews.length;
+                                  final totalCount =
+                                      reviewCountAsync.valueOrNull ??
+                                          reviews.length;
                                   return Padding(
-                                    padding:
-                                        const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      'クチコミなし',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey[400],
-                                      ),
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: _StarRating(
+                                      avg: avg,
+                                      count: totalCount,
+                                      color: typeColor,
                                     ),
                                   );
-                                }
-                                final avg = reviews
-                                        .map((r) => r.rating)
-                                        .fold(0, (a, b) => a + b) /
-                                    reviews.length;
-                                // reviewCountProvider から正確な総件数を取得
-                                final totalCount =
-                                    reviewCountAsync.valueOrNull ??
-                                        reviews.length;
-                                return Padding(
+                                },
+                              ) ??
+                                  const SizedBox.shrink(),
+
+                              // アメニティチップ（施設名の直下に移動）
+                              amenitiesAsync.whenOrNull(
+                                data: (names) {
+                                  if (names.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: names.map((name) {
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 5),
+                                          decoration: BoxDecoration(
+                                            color: typeColor
+                                                .withValues(alpha: 0.08),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            border: Border.all(
+                                                color: typeColor
+                                                    .withValues(alpha: 0.3)),
+                                          ),
+                                          child: Text(
+                                            name,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: typeColor,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  );
+                                },
+                              ) ??
+                                  const SizedBox.shrink(),
+
+                              // 電話・ウェブのアクションチップ（存在する場合のみ表示）
+                              if (facility.phone != null &&
+                                      facility.phone!.isNotEmpty ||
+                                  facility.website != null &&
+                                      facility.website!.isNotEmpty)
+                                Padding(
                                   padding:
-                                      const EdgeInsets.only(top: 4),
-                                  child: _StarRating(
-                                    avg: avg,
-                                    count: totalCount,
-                                    color: typeColor,
+                                      const EdgeInsets.only(top: 8, bottom: 4),
+                                  child: Row(
+                                    children: [
+                                      if (facility.phone != null &&
+                                          facility.phone!.isNotEmpty) ...[
+                                        _ActionChip(
+                                          icon: Icons.phone_outlined,
+                                          label: '電話',
+                                          color: typeColor,
+                                          onTap: () => _launchPhone(
+                                              context, facility.phone!),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      if (facility.website != null &&
+                                          facility.website!.isNotEmpty)
+                                        _ActionChip(
+                                          icon: Icons.language_outlined,
+                                          label: 'ウェブ',
+                                          color: typeColor,
+                                          onTap: () => _launchWeb(
+                                              context, facility.website!),
+                                        ),
+                                    ],
                                   ),
-                                );
-                              },
-                            ) ??
-                                const SizedBox.shrink(),
-                          ],
-                        ),
-                      ),
-                      // お気に入りハートボタン
-                      _FavoriteButton(
-                          facilityId: facility.id, isFav: isFav),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SliverToBoxAdapter(
-                  child: Divider(height: 20)),
-
-              // ── 基本情報グリッド ────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      if (facility.price != null &&
-                          facility.price! > 0)
-                        _InfoRow(
-                          icon: Icons.payments_outlined,
-                          iconColor: typeColor,
-                          label: '入浴料金',
-                          value: '¥${facility.price}',
-                        ),
-                      if (facility.openingHours != null &&
-                          facility.openingHours!.isNotEmpty)
-                        _InfoRow(
-                          icon: Icons.access_time_outlined,
-                          iconColor: typeColor,
-                          label: '営業時間',
-                          value: facility.openingHours!,
-                        ),
-                      if (facility.address != null &&
-                          facility.address!.isNotEmpty)
-                        _InfoRow(
-                          icon: Icons.location_on_outlined,
-                          iconColor: typeColor,
-                          label: '住所',
-                          value: facility.address!,
-                        ),
-                      if ((facility.price == null ||
-                              facility.price == 0) &&
-                          (facility.openingHours == null ||
-                              facility.openingHours!.isEmpty) &&
-                          (facility.address == null ||
-                              facility.address!.isEmpty))
-                        Padding(
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 8),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline,
-                                  size: 16, color: Colors.grey[400]),
-                              const SizedBox(width: 8),
-                              Text(
-                                '詳細情報を準備中です',
-                                style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 13),
-                              ),
+                                ),
                             ],
                           ),
                         ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── アメニティチップ ────────────────────────────────────
-              SliverToBoxAdapter(
-                child: amenitiesAsync.whenOrNull(
-                  data: (names) {
-                    if (names.isEmpty) return const SizedBox.shrink();
-                    return Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: names.map((name) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color:
-                                  typeColor.withValues(alpha: 0.08),
-                              borderRadius:
-                                  BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: typeColor
-                                      .withValues(alpha: 0.3)),
-                            ),
-                            child: Text(
-                              name,
-                              style: TextStyle(
-                                fontSize: 12,
+                        // ナビチップ + お気に入りハートボタン（横並び）
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: _ActionChip(
+                                icon: Icons.near_me_outlined,
+                                label: 'ナビ',
                                 color: typeColor,
-                                fontWeight: FontWeight.w500,
+                                onTap: () => _launchMap(
+                                  context,
+                                  facility.latitude,
+                                  facility.longitude,
+                                  name: facility.name,
+                                ),
                               ),
                             ),
-                          );
-                        }).toList(),
-                      ),
-                    );
-                  },
-                ) ??
-                    const SizedBox.shrink(),
-              ),
-
-              // ── アクションボタン行（電話・ウェブ・ナビ）──────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Row(
-                    children: [
-                      if (facility.phone != null &&
-                          facility.phone!.isNotEmpty) ...[
-                        _ActionChip(
-                          icon: Icons.phone_outlined,
-                          label: '電話',
-                          color: typeColor,
-                          onTap: () =>
-                              _launchPhone(context, facility.phone!),
+                            _FavoriteButton(
+                                facilityId: facility.id, isFav: isFav),
+                          ],
                         ),
-                        const SizedBox(width: 8),
                       ],
-                      if (facility.website != null &&
-                          facility.website!.isNotEmpty) ...[
-                        _ActionChip(
-                          icon: Icons.language_outlined,
-                          label: 'ウェブ',
-                          color: typeColor,
-                          onTap: () =>
-                              _launchWeb(context, facility.website!),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      _ActionChip(
-                        icon: Icons.near_me_outlined,
-                        label: 'ナビ',
-                        color: typeColor,
-                        onTap: () => _launchMap(
-                          context,
-                          facility.latitude,
-                          facility.longitude,
-                          name: facility.name,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
+
+              // ── 基本情報グリッド（情報がある場合のみ表示）──────────
+              if (facility.price != null && facility.price! > 0 ||
+                  facility.openingHours != null &&
+                      facility.openingHours!.isNotEmpty ||
+                  facility.address != null && facility.address!.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Column(
+                      children: [
+                        if (facility.price != null && facility.price! > 0)
+                          _InfoRow(
+                            icon: Icons.payments_outlined,
+                            iconColor: typeColor,
+                            label: '入浴料金',
+                            value: '¥${facility.price}',
+                          ),
+                        if (facility.openingHours != null &&
+                            facility.openingHours!.isNotEmpty)
+                          _InfoRow(
+                            icon: Icons.access_time_outlined,
+                            iconColor: typeColor,
+                            label: '営業時間',
+                            value: facility.openingHours!,
+                          ),
+                        if (facility.address != null &&
+                            facility.address!.isNotEmpty)
+                          _InfoRow(
+                            icon: Icons.location_on_outlined,
+                            iconColor: typeColor,
+                            label: '住所',
+                            value: facility.address!,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
 
               // ── クチコミプレビュー（最新2件）──────────────────────────
               SliverToBoxAdapter(

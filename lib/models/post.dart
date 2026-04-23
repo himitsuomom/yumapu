@@ -48,6 +48,8 @@ class Comment {
 /// post_likes を別途チェックしてセットするクライアント側フラグ。
 class Post {
   final String id;
+  /// 投稿者の Supabase Auth ユーザーID（削除権限チェックに使用）
+  final String userId;
   final String user;
   final String avatar;
   final String content;
@@ -64,6 +66,7 @@ class Post {
 
   Post({
     required this.id,
+    required this.userId,
     required this.user,
     required this.avatar,
     required this.content,
@@ -91,6 +94,7 @@ class Post {
 
     return Post(
       id: json['id'] as String? ?? '',
+      userId: json['user_id'] as String? ?? '',
       user: displayName,
       avatar: avatarUrl,
       content: json['content'] as String? ?? '',
@@ -116,6 +120,7 @@ class Post {
   Post copyWith({int? likes, bool? isLiked, int? commentsCount}) {
     return Post(
       id: id,
+      userId: userId,
       user: user,
       avatar: avatar,
       content: content,

@@ -23,15 +23,14 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  // 検索タブ（index=1）をデフォルトにする。
-  // マップ（index=0）は Google Maps SDK の APIキーが正しく設定されるまで
-  // ユーザーがタップしない限りビルドされない。
-  int _currentIndex = 1;
+  // マップタブ（index=0）をデフォルトにする。
+  // OpenStreetMap に移行済みのため APIキー不要・クラッシュリスクなし。
+  int _currentIndex = 0;
 
   // 訪問済みのタブ番号を記録する。
   // IndexedStack の子として SizedBox.shrink() を置いておき、
   // 初めて訪問したタイミングで実際の画面ウィジェットに差し替える。
-  final Set<int> _visitedIndices = {1};
+  final Set<int> _visitedIndices = {0};
 
   /// タブ番号に対応する画面ウィジェットを返す。
   Widget _buildScreen(int index) {

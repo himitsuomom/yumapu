@@ -24,18 +24,7 @@ class FeedScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('フィード'),
-        actions: [
-          if (isSignedIn)
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              tooltip: '投稿する',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const CreatePostScreen(),
-                ),
-              ),
-            ),
-        ],
+        // 投稿ボタンは FAB だけに統一。AppBar のアイコンは削除。
       ),
       body: feedAsync.when(
         data: (posts) {
@@ -100,9 +89,45 @@ class _PostCard extends ConsumerWidget {
 
   static final _dateFormat = DateFormat('yyyy/MM/dd HH:mm');
 
+  /// 削除確認ダイアログを表示し、OKなら投稿を削除する
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('投稿を削除しますか？'),
+        content: const Text('この操作は取り消せません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+                foregroundColor: Colors.red),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(postFeedProvider.notifier).deletePost(post.id);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('削除に失敗しました。もう一度お試しください。')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSignedIn = ref.watch(isSignedInProvider);
+    final session = ref.watch(sessionProvider);
+    // 現在のログインユーザーが投稿者かどうかを確認
+    final isMyPost = session != null && session.user.id == post.userId;
 
     // 投稿日時をフォーマット（パースできなければ生の文字列を表示）
     String formattedTime;
@@ -124,7 +149,7 @@ class _PostCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── ヘッダー（アバター・名前・日時） ──────────────────────────
+          // ── ヘッダー（アバター・名前・日時・削除メニュー） ────────────
           Row(
             children: [
               _PostAvatar(avatarUrl: post.avatar),
@@ -147,6 +172,30 @@ class _PostCard extends ConsumerWidget {
                   ],
                 ),
               ),
+              // 自分の投稿だけ「…」メニューを表示
+              if (isMyPost)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert,
+                      size: 18, color: Color(0xFF9E9E9E)),
+                  tooltip: '操作',
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _confirmDelete(context, ref);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                          SizedBox(width: 8),
+                          Text('削除', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 10),

@@ -6,6 +6,7 @@
 // - カメラ停止後 800ms で再検索（onPositionChanged + debounce タイマー）
 // - フィルターFABでアメニティ・施設タイプを絞り込める
 // - 現在地ボタンで地図を現在地に移動する
+// - マーカータップ → FacilityPreviewSheet（ボトムシート）を表示
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -17,6 +18,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/features/map/widgets/facility_preview_sheet.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/services/map_clustering_service.dart';
@@ -174,13 +176,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   // ── Bottom sheets ─────────────────────────────────────────────────────────
 
+  /// マーカータップ時に呼ばれる。
+  /// 別画面に遷移せず、地図上にボトムシートで施設情報をプレビュー表示する。
+  /// 「詳細を見る」ボタンが押されたら FacilityDetailScreen へ遷移する。
   void _showFacilityPreview(Facility facility) {
     showModalBottomSheet<void>(
       context: context,
+      // isScrollControlled=true にしないと DraggableScrollableSheet が正しく動かない
+      isScrollControlled: true,
+      // 角丸の形にする
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _FacilityPreviewSheet(facility: facility),
+      // 地図の色が透けて見える半透明背景
+      backgroundColor: Colors.transparent,
+      builder: (_) => FacilityPreviewSheet(
+        facility: facility,
+        onOpenDetail: () {
+          // ボトムシートを閉じてから詳細画面へ遷移
+          Navigator.of(context).pop();
+          Navigator.of(context).pushNamed('/facility', arguments: facility.id);
+        },
+      ),
     );
   }
 
@@ -402,8 +419,11 @@ class _FilterSheet extends ConsumerWidget {
               selectedAmenityIds: params.amenityIds,
               onFacilityTypeChanged: (typeId) {
                 ref.read(facilitySearchParamsProvider.notifier).update(
-                      (p) => p.copyWith(facilityTypeId: typeId, page: 0),
-                    );
+                  (p) => typeId == null
+                      // null（「すべて」チップ）は clearFacilityType:true でリセット
+                      ? p.copyWith(clearFacilityType: true, page: 0)
+                      : p.copyWith(facilityTypeId: typeId, page: 0),
+                );
               },
               onAmenityToggled: (amenityId) {
                 ref.read(facilitySearchParamsProvider.notifier).update((p) {
@@ -435,78 +455,3 @@ class _FilterSheet extends ConsumerWidget {
   }
 }
 
-// ── Facility preview sheet ────────────────────────────────────────────────────
-
-class _FacilityPreviewSheet extends StatelessWidget {
-  const _FacilityPreviewSheet({required this.facility});
-
-  final Facility facility;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              facility.name,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            if (facility.hasFacilityType) ...[
-              const SizedBox(height: 4),
-              Chip(
-                label: Text(facility.facilityTypeJa),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-            if (facility.address != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.location_on_outlined,
-                      size: 16, color: Color(0xFF757575)),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      facility.address!,
-                      style: const TextStyle(color: Color(0xFF757575)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.of(context)
-                      .pushNamed('/facility', arguments: facility.id);
-                },
-                child: const Text('詳細を見る'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

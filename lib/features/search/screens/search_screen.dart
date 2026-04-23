@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/widgets/empty_widget.dart';
@@ -17,19 +19,44 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
 
+  /// リアルタイム検索用の debounce タイマー。
+  /// ユーザーが入力を止めてから 400ms 後に検索を実行する。
+  Timer? _debounceTimer;
+
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   // ── Filter helpers ────────────────────────────────────────────────────────
 
+  /// テキスト入力中にリアルタイムで呼ばれる。400ms のdebounce後に検索する。
+  /// debounce = ユーザーが入力を止めてから少し待って検索することで、
+  /// 1文字ごとに DB にアクセスしないようにする仕組み。
+  void _onSearchChanged(String query) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      ref.read(facilitySearchParamsProvider.notifier).update(
+            (p) => p.copyWith(
+              searchQuery: query.trim().isEmpty ? null : query.trim(),
+              page: 0,
+              clearText: query.trim().isEmpty,
+            ),
+          );
+    });
+  }
+
+  /// Enterキー押下時にも確実に検索を実行する（debounce をスキップ）。
   void _onSearchSubmitted(String query) {
+    _debounceTimer?.cancel();
     ref.read(facilitySearchParamsProvider.notifier).update(
           (p) => p.copyWith(
             searchQuery: query.trim().isEmpty ? null : query.trim(),
             page: 0,
+            clearText: query.trim().isEmpty,
           ),
         );
   }
@@ -58,6 +85,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _clearFilters() {
+    _debounceTimer?.cancel();
     _searchController.clear();
     ref.read(facilitySearchParamsProvider.notifier).state =
         const FacilitySearchParams();
@@ -92,7 +120,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: TextField(
               controller: _searchController,
               textInputAction: TextInputAction.search,
-              onSubmitted: _onSearchSubmitted,
+              onChanged: _onSearchChanged,       // リアルタイム検索
+              onSubmitted: _onSearchSubmitted,   // Enter でも検索
               decoration: InputDecoration(
                 hintText: '施設名で検索',
                 prefixIcon: const Icon(Icons.search),
@@ -100,6 +129,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ? IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () {
+                          _debounceTimer?.cancel();
                           _searchController.clear();
                           ref
                               .read(facilitySearchParamsProvider.notifier)

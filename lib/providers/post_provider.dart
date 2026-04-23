@@ -161,6 +161,61 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
     return client.storage.from('post-images').getPublicUrl(storagePath);
   }
 
+  /// 投稿削除（自分の投稿のみ削除可能）
+  ///
+  /// 楽観的UI更新: まず画面から消してから DB に DELETE を送る。
+  /// DB 削除に失敗したら元の投稿リストに戻す（ロールバック）。
+  /// 投稿に画像がある場合は Storage からも削除する。
+  Future<void> deletePost(String postId) async {
+    final client = _ref.read(supabaseClientProvider);
+    final session = _ref.read(sessionProvider);
+    if (client == null || session == null) return;
+
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 削除対象の投稿を探す
+    final target = current.where((p) => p.id == postId).firstOrNull;
+    if (target == null) return;
+
+    // 楽観的UI: 画面から即時削除
+    state = AsyncData(current.where((p) => p.id != postId).toList());
+
+    try {
+      // DB の posts レコードを削除（RLS: 自分の投稿のみ削除可能）
+      await client
+          .from('posts')
+          .delete()
+          .eq('id', postId)
+          .eq('user_id', session.user.id);
+
+      // 画像が Storage にある場合は Storage からも削除する
+      // imageUrl のパスから storage_path を抽出する
+      if (target.imageUrl.isNotEmpty) {
+        try {
+          final uri = Uri.tryParse(target.imageUrl);
+          if (uri != null) {
+            // URL の末尾 2セグメントが "{userId}/{fileName}" の形式
+            final segments = uri.pathSegments;
+            if (segments.length >= 2) {
+              final storagePath =
+                  '${segments[segments.length - 2]}/${segments.last}';
+              await client.storage
+                  .from('post-images')
+                  .remove([storagePath]);
+            }
+          }
+        } catch (_) {
+          // Storage 削除失敗は致命的ではないため無視
+        }
+      }
+    } catch (_) {
+      // DB 削除失敗: ロールバック
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
+
   /// 新規投稿作成
   Future<void> createPost({
     required String content,
