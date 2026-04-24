@@ -2,11 +2,14 @@
 //
 // マップ画面（OpenStreetMap / flutter_map 版）
 // APIキー不要・完全無料の OpenStreetMap タイルを使用。
-// - 起動時に現在地周辺 5km を初期検索
-// - カメラ停止後 800ms で再検索（onPositionChanged + debounce タイマー）
-// - フィルターFABでアメニティ・施設タイプを絞り込める
-// - 現在地ボタンで地図を現在地に移動する
-// - マーカータップ → FacilityPreviewSheet（ボトムシート）を表示
+//
+// 機能:
+//   - 起動時に現在地周辺 5km を初期検索
+//   - カメラ停止後 800ms で再検索（debounce）
+//   - 上部オーバーレイ検索バーで施設名検索（400ms debounce）
+//   - フィルターFABでアメニティ・施設タイプを絞り込める
+//   - 現在地ボタンで地図を現在地に移動する
+//   - マーカータップ → FacilityPreviewSheet（ボトムシート）を表示
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -21,6 +24,7 @@ import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/features/map/widgets/facility_preview_sheet.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
+import 'package:yu_map/providers/location_provider.dart';
 import 'package:yu_map/services/map_clustering_service.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -35,21 +39,38 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   final _clusteringService = MapClusteringService();
   List<Marker> _markers = [];
 
+  // ── 地図カメラ debounce ───────────────────────────────────────────────────
+
   /// 最後に検索したカメラ中心座標。
   /// 大きく移動したときだけ再検索するための比較用。
   LatLng? _lastSearchCenter;
 
+  /// 最後に検索したときのズームレベル。
+  /// UX-3修正: ズームが大きく変わった場合も再検索トリガーとするために保持する。
+  double? _lastSearchZoom;
+
   /// カメラが動いている最中の最新位置。
   MapCamera? _currentCamera;
 
-  /// debounce（ちょっと待つ）タイマー。地図が止まった 800ms 後に再検索する。
+  /// カメラ停止後の debounce タイマー（800ms 後に再検索）
   Timer? _idleTimer;
+
+  // ── 検索バー ──────────────────────────────────────────────────────────────
+
+  final _searchController = TextEditingController();
+
+  /// 文字入力の debounce タイマー（400ms 後に検索を実行）
+  Timer? _searchDebounce;
+
+  // ── 定数 ─────────────────────────────────────────────────────────────────
 
   static const _defaultCenter =
       LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
 
   /// カメラが何m移動したら再検索するかの閾値（2km）
   static const _reloadThresholdMeters = 2000.0;
+
+  // ── ライフサイクル ────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -61,28 +82,78 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   @override
   void dispose() {
     _idleTimer?.cancel();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     _mapController.dispose();
     super.dispose();
   }
 
-  // ── Location ──────────────────────────────────────────────────────────────
+  // ── 現在地取得 ────────────────────────────────────────────────────────────
 
+  /// アプリ起動時の初期化。現在地を取得してカメラを移動し、周辺施設を検索する。
+  /// フィルター・検索テキストなどすべてのパラメータを初期値に設定する。
   Future<void> _initLocation() async {
     final latLng = await _getCurrentLocation();
     if (!mounted) return;
+
     _lastSearchCenter = latLng;
-    ref.read(facilitySearchParamsProvider.notifier).update(
+    _lastSearchZoom = 13; // 初期ズームレベルに合わせる
+
+    // 現在地をアプリ全体で共有するプロバイダーに保存する
+    // （FacilityListTile の距離表示などが参照する）
+    ref.read(currentLocationProvider.notifier).state = (
+      lat: latLng.latitude,
+      lng: latLng.longitude,
+    );
+
+    // 地図を現在地にフォーカスし、周辺 5km の施設を検索する
+    ref.read(mapSearchParamsProvider.notifier).update(
           (params) => params.copyWith(
             latitude: latLng.latitude,
             longitude: latLng.longitude,
             radiusMeters: 5000,
           ),
         );
-    // flutter_map のカメラ移動
     _mapController.move(latLng, 13);
   }
 
-  /// 現在地を取得する。権限なし・タイムアウトは日本中心にフォールバック。
+  /// Bug-V9-3: 現在地ボタン専用メソッド。
+  ///
+  /// [_initLocation] との違い：
+  /// - カメラを現在地に移動する（同じ）
+  /// - currentLocationProvider を更新する（同じ）
+  /// - 地図の lat/lng/radius を更新する（同じ）
+  /// - facilityTypeId・amenityIds・searchQuery などのフィルターは維持する（違い）
+  ///
+  /// ユーザーが施設タイプや検索ワードで絞り込んでいる最中に
+  /// 現在地ボタンを押しても絞り込み設定が消えないようにする。
+  Future<void> _goToCurrentLocation() async {
+    final latLng = await _getCurrentLocation();
+    if (!mounted) return;
+
+    _lastSearchCenter = latLng;
+    // ズームは 13 に固定（現在地ボタンは適度なズームで開く）
+    _lastSearchZoom = 13;
+
+    // 距離表示用プロバイダーを更新
+    ref.read(currentLocationProvider.notifier).state = (
+      lat: latLng.latitude,
+      lng: latLng.longitude,
+    );
+
+    // 既存フィルター（facilityTypeId・amenityIds・searchQuery）を保持しつつ
+    // 位置情報だけを更新する（copyWith は未指定フィールドを既存値で埋める）
+    ref.read(mapSearchParamsProvider.notifier).update(
+          (params) => params.copyWith(
+            latitude: latLng.latitude,
+            longitude: latLng.longitude,
+            radiusMeters: 5000,
+          ),
+        );
+    _mapController.move(latLng, 13);
+  }
+
+  /// 現在地を取得する。権限なし・タイムアウト時は日本中心（東京）にフォールバック。
   Future<LatLng> _getCurrentLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
@@ -103,10 +174,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
   }
 
-  // ── Camera → re-search ────────────────────────────────────────────────────
+  // ── カメラ移動 → 再検索 ───────────────────────────────────────────────────
 
-  /// カメラ位置が変わるたびに呼ばれる。
-  /// debounce タイマーで 800ms 静止後に再検索する。
+  /// カメラ位置が変わるたびに呼ばれる。800ms 静止後に再検索する。
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     _currentCamera = camera;
     _idleTimer?.cancel();
@@ -122,14 +192,34 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     if (camera == null) return;
 
     final newCenter = camera.center;
+    final newZoom = camera.zoom;
     final last = _lastSearchCenter;
+    final lastZoom = _lastSearchZoom;
 
-    final shouldReload = last == null ||
-        _distanceMeters(last, newCenter) > _reloadThresholdMeters;
+    // UX-3修正: 移動距離 OR ズームレベルの変化（1段階以上）で再検索する。
+    // これにより、ズームアウトして広域を見ようとした場合も新しい施設が取得される。
+    final movedFar = last == null || _distanceMeters(last, newCenter) > _reloadThresholdMeters;
+    final zoomChanged = lastZoom == null || (newZoom - lastZoom).abs() >= 1.0;
+    final shouldReload = movedFar || zoomChanged;
 
-    if (!shouldReload) return;
+    // ズームがクラスタリング閾値（14）を跨いだ場合、施設リストが変わらなくても
+    // マーカーを再描画してクラスター/個別ピンの切り替えを即座に反映する。
+    // （例: zoom 13.9 → 14.1 に変化した場合、shouldReload は false だが
+    //   クラスターをやめて個別ピンに切り替える必要がある）
+    final crossedClusterThreshold = lastZoom != null &&
+        ((lastZoom < 14) != (newZoom < 14));
+    if (!shouldReload) {
+      if (crossedClusterThreshold) {
+        final currentFacilities = ref.read(mapFacilityListProvider).valueOrNull;
+        if (currentFacilities != null) {
+          _updateMarkers(currentFacilities);
+        }
+      }
+      return;
+    }
 
     _lastSearchCenter = newCenter;
+    _lastSearchZoom = newZoom;
 
     // ズームレベルに応じて検索半径を変える
     final zoom = camera.zoom;
@@ -141,7 +231,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 ? 15000.0
                 : 30000.0;
 
-    ref.read(facilitySearchParamsProvider.notifier).update(
+    ref.read(mapSearchParamsProvider.notifier).update(
           (params) => params.copyWith(
             latitude: newCenter.latitude,
             longitude: newCenter.longitude,
@@ -163,37 +253,62 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return 2 * r * math.asin(math.sqrt(h));
   }
 
-  // ── Markers ───────────────────────────────────────────────────────────────
+  // ── 検索バー ──────────────────────────────────────────────────────────────
+
+  /// 文字入力が変わるたびに呼ばれる。400ms 後に検索を実行する。
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      _applySearch(query);
+    });
+  }
+
+  /// Enter キー押下時に即座に検索する（debounce をスキップ）。
+  void _onSearchSubmitted(String query) {
+    _searchDebounce?.cancel();
+    _applySearch(query);
+  }
+
+  void _applySearch(String query) {
+    final trimmed = query.trim();
+    ref.read(mapSearchParamsProvider.notifier).update(
+          (p) => trimmed.isEmpty
+              ? p.copyWith(clearText: true, page: 0)
+              : p.copyWith(searchQuery: trimmed, page: 0),
+        );
+  }
+
+  // ── マーカー更新 ─────────────────────────────────────────────────────────
 
   void _updateMarkers(List<Facility> facilities) {
     if (!mounted) return;
-    final markers = _clusteringService.buildMarkers(
+    // Bug-V9-1対応: 現在のズームレベルに応じてクラスタリングを適用する。
+    // zoom >= 14 は個別ピン、それ未満はグリッドでまとめてクラスターバッジを表示。
+    // 初期ズームは13のため、東京など密集エリアでも最初からクラスター表示になる。
+    final zoom = _currentCamera?.zoom ?? AppConstants.defaultZoom;
+    final markers = _clusteringService.buildMarkersWithClustering(
       facilities,
       onTap: _showFacilityPreview,
+      zoomLevel: zoom,
     );
     setState(() => _markers = markers);
   }
 
-  // ── Bottom sheets ─────────────────────────────────────────────────────────
+  // ── ボトムシート ─────────────────────────────────────────────────────────
 
-  /// マーカータップ時に呼ばれる。
-  /// 別画面に遷移せず、地図上にボトムシートで施設情報をプレビュー表示する。
-  /// 「詳細を見る」ボタンが押されたら FacilityDetailScreen へ遷移する。
+  /// マーカータップ時に呼ばれる。地図上にボトムシートで施設情報を表示する。
   void _showFacilityPreview(Facility facility) {
     showModalBottomSheet<void>(
       context: context,
-      // isScrollControlled=true にしないと DraggableScrollableSheet が正しく動かない
       isScrollControlled: true,
-      // 角丸の形にする
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      // 地図の色が透けて見える半透明背景
       backgroundColor: Colors.transparent,
       builder: (_) => FacilityPreviewSheet(
         facility: facility,
         onOpenDetail: () {
-          // ボトムシートを閉じてから詳細画面へ遷移
           Navigator.of(context).pop();
           Navigator.of(context).pushNamed('/facility', arguments: facility.id);
         },
@@ -217,7 +332,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<List<Facility>>>(
-      facilityListProvider,
+      mapFacilityListProvider,
       (previous, next) {
         final nextList = next.valueOrNull;
         if (nextList != null && nextList != previous?.valueOrNull) {
@@ -226,15 +341,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       },
     );
 
-    final isLoading = ref.watch(facilityListProvider) is AsyncLoading;
-    final params = ref.watch(facilitySearchParamsProvider);
-    final hasFilter =
-        params.facilityTypeId != null || params.amenityIds.isNotEmpty;
+    final facilityState = ref.watch(mapFacilityListProvider);
+    final isLoading = facilityState is AsyncLoading;
+    final params = ref.watch(mapSearchParamsProvider);
+    final hasFilter = params.facilityTypeId != null ||
+        params.amenityIds.isNotEmpty ||
+        params.isOpenNow;
+
+    // 検索クエリがある場合に表示する × バッジ
+    final hasSearchQuery = params.searchQuery != null;
+
+    // Bug-V6-3修正: 検索が1回以上実行されていて、かつ結果が0件のとき空状態メッセージを表示する。
+    // facilityState.hasValue は AsyncData（空リスト含む）になったときに true になるため、
+    // 初回ロード前（AsyncLoading）には表示されない。
+    final showEmptyState = facilityState.hasValue &&
+        !isLoading &&
+        (facilityState.valueOrNull?.isEmpty ?? false) &&
+        params.latitude != null;
 
     return Scaffold(
       body: Stack(
         children: [
-          // ── FlutterMap（OpenStreetMap タイル）───────────────────────
+          // ── FlutterMap（OpenStreetMap タイル）─────────────────────────
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -243,83 +371,193 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               onPositionChanged: _onPositionChanged,
             ),
             children: [
-              // OpenStreetMap タイルレイヤー（APIキー不要・完全無料）
               TileLayer(
                 urlTemplate:
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.yumap.app',
-                // タイルのキャッシュ設定（オフライン対応のため最大256枚保持）
                 maxNativeZoom: 18,
               ),
-              // 施設マーカーレイヤー
               MarkerLayer(markers: _markers),
             ],
           ),
 
-          // ── ローディングインジケーター ─────────────────────────────
-          if (isLoading)
-            const Positioned(
-              top: 60,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+          // ── 上部オーバーレイ（検索バー + フィルターバナー）────────────
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 12,
+            right: 12,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── 検索バー ──────────────────────────────────────────
+                Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(28),
+                  shadowColor: Colors.black26,
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onChanged: _onSearchChanged,
+                    onSubmitted: _onSearchSubmitted,
+                    decoration: InputDecoration(
+                      hintText: '施設名で検索',
+                      // ローディング中はスピナー、通常は虫眼鏡アイコン
+                      prefixIcon: isLoading
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : const Icon(Icons.search),
+                      // 入力中のみ × ボタンを表示する
+                      suffixIcon: hasSearchQuery
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              tooltip: '検索をクリア',
+                              onPressed: () {
+                                _searchDebounce?.cancel();
+                                _searchController.clear();
+                                ref
+                                    .read(
+                                        mapSearchParamsProvider.notifier)
+                                    .update(
+                                        (p) => p.copyWith(
+                                            clearText: true, page: 0));
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(28),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 0),
                     ),
                   ),
                 ),
-              ),
-            ),
 
-          // ── フィルター中バナー ────────────────────────────────────
-          if (hasFilter)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              left: 16,
-              right: 16,
-              child: Card(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.filter_list,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'フィルター適用中',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600,
+                // ── フィルター適用中バナー ─────────────────────────────
+                if (hasFilter) ...[
+                  const SizedBox(height: 6),
+                  Material(
+                    elevation: 2,
+                    borderRadius: BorderRadius.circular(20),
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.filter_list,
+                            size: 15,
+                            color:
+                                Theme.of(context).colorScheme.primary,
                           ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'フィルター適用中',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              ref
+                                  .read(mapSearchParamsProvider
+                                      .notifier)
+                                  .update(
+                                    (p) => p.copyWith(
+                                      clearFacilityType: true,
+                                      amenityIds: [],
+                                      isOpenNow: false,
+                                    ),
+                                  );
+                            },
+                            child: Icon(
+                              Icons.close,
+                              size: 15,
+                              color:
+                                  Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // ── 現在地ボタン（右下）──────────────────────────────────────
+          Positioned(
+            bottom: 96,
+            right: 16,
+            child: FloatingActionButton.small(
+              heroTag: 'my_location_fab',
+              // Bug-V9-3: フィルターを保持したまま現在地に移動する
+              onPressed: _goToCurrentLocation,
+              tooltip: '現在地',
+              child: const Icon(Icons.my_location),
+            ),
+          ),
+
+          // ── Bug-V6-3: 検索結果0件の空状態オーバーレイ ─────────────────
+          if (showEmptyState)
+            Positioned(
+              bottom: 160,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.93),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.search_off,
+                        size: 36,
+                        color: Color(0xFF9E9E9E),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        '施設が見つかりません',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () {
-                          ref
-                              .read(facilitySearchParamsProvider.notifier)
-                              .update(
-                                (p) => p.copyWith(
-                                  clearFacilityType: true,
-                                  amenityIds: [],
-                                ),
-                              );
-                        },
-                        child: Icon(
-                          Icons.close,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
+                      const SizedBox(height: 4),
+                      const Text(
+                        '検索条件を変えるか、別のエリアで試してください',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF757575),
                         ),
                       ),
                     ],
@@ -327,22 +565,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 ),
               ),
             ),
-
-          // ── 現在地ボタン（右下）──────────────────────────────────
-          Positioned(
-            bottom: 96,
-            right: 16,
-            child: FloatingActionButton.small(
-              heroTag: 'my_location_fab',
-              onPressed: _initLocation,
-              tooltip: '現在地',
-              child: const Icon(Icons.my_location),
-            ),
-          ),
         ],
       ),
 
-      // ── フィルターFAB（左下）──────────────────────────────────────
+      // ── フィルターFAB（左下）──────────────────────────────────────────
       floatingActionButton: FloatingActionButton(
         onPressed: _showFilterSheet,
         tooltip: 'フィルター',
@@ -355,14 +581,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 }
 
-// ── Filter bottom sheet ───────────────────────────────────────────────────────
+// ── フィルターボトムシート ────────────────────────────────────────────────────
 
 class _FilterSheet extends ConsumerWidget {
   const _FilterSheet();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final params = ref.watch(facilitySearchParamsProvider);
+    final params = ref.watch(mapSearchParamsProvider);
 
     return SafeArea(
       child: Padding(
@@ -395,15 +621,17 @@ class _FilterSheet extends ConsumerWidget {
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   if (params.facilityTypeId != null ||
-                      params.amenityIds.isNotEmpty)
+                      params.amenityIds.isNotEmpty ||
+                      params.isOpenNow)
                     TextButton(
                       onPressed: () {
                         ref
-                            .read(facilitySearchParamsProvider.notifier)
+                            .read(mapSearchParamsProvider.notifier)
                             .update(
                               (p) => p.copyWith(
                                 clearFacilityType: true,
                                 amenityIds: [],
+                                isOpenNow: false,
                               ),
                             );
                         Navigator.of(context).pop();
@@ -417,16 +645,16 @@ class _FilterSheet extends ConsumerWidget {
             FilterBar(
               selectedFacilityTypeId: params.facilityTypeId,
               selectedAmenityIds: params.amenityIds,
+              isOpenNow: params.isOpenNow,
               onFacilityTypeChanged: (typeId) {
-                ref.read(facilitySearchParamsProvider.notifier).update(
+                ref.read(mapSearchParamsProvider.notifier).update(
                   (p) => typeId == null
-                      // null（「すべて」チップ）は clearFacilityType:true でリセット
                       ? p.copyWith(clearFacilityType: true, page: 0)
                       : p.copyWith(facilityTypeId: typeId, page: 0),
                 );
               },
               onAmenityToggled: (amenityId) {
-                ref.read(facilitySearchParamsProvider.notifier).update((p) {
+                ref.read(mapSearchParamsProvider.notifier).update((p) {
                   final current = List<String>.from(p.amenityIds);
                   if (current.contains(amenityId)) {
                     current.remove(amenityId);
@@ -435,6 +663,11 @@ class _FilterSheet extends ConsumerWidget {
                   }
                   return p.copyWith(amenityIds: current, page: 0);
                 });
+              },
+              onOpenNowChanged: (value) {
+                ref.read(mapSearchParamsProvider.notifier).update(
+                      (p) => p.copyWith(isOpenNow: value, page: 0),
+                    );
               },
             ),
             const SizedBox(height: 16),
@@ -454,4 +687,3 @@ class _FilterSheet extends ConsumerWidget {
     );
   }
 }
-

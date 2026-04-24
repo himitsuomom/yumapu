@@ -8,6 +8,8 @@ import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
+// FacilitySortBy は facility_provider.dart 経由でエクスポートされているため
+// facility_service.dart を直接インポートする必要はない
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -22,6 +24,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// リアルタイム検索用の debounce タイマー。
   /// ユーザーが入力を止めてから 400ms 後に検索を実行する。
   Timer? _debounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Bug-3修正: 地図画面など他の場所でsearchQueryが設定されている場合に
+    // テキストフィールドをプロバイダーの値と同期する。
+    // これにより「絞り込まれているのにテキストが空」という混乱を防ぐ。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final currentQuery =
+          ref.read(facilitySearchParamsProvider).searchQuery ?? '';
+      if (_searchController.text != currentQuery) {
+        _searchController.text = currentQuery;
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -84,6 +102,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     });
   }
 
+  /// UX-V9-4対応: ソート順を変更する。
+  void _onSortChanged(FacilitySortBy sortBy) {
+    ref.read(facilitySearchParamsProvider.notifier).update(
+          (p) => p.copyWith(sortBy: sortBy, page: 0),
+        );
+  }
+
+  /// UX-V9-6対応: 「今日営業中」フィルターをトグルする。
+  void _onOpenNowChanged(bool value) {
+    ref.read(facilitySearchParamsProvider.notifier).update(
+          (p) => p.copyWith(isOpenNow: value, page: 0),
+        );
+  }
+
   void _clearFilters() {
     _debounceTimer?.cancel();
     _searchController.clear();
@@ -99,7 +131,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final facilityAsync = ref.watch(facilityListProvider);
     final hasActiveFilters = params.searchQuery != null ||
         params.facilityTypeId != null ||
-        params.amenityIds.isNotEmpty;
+        params.amenityIds.isNotEmpty ||
+        params.sortBy != FacilitySortBy.qualityScore ||
+        params.isOpenNow;
 
     return Scaffold(
       appBar: AppBar(
@@ -150,6 +184,36 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             selectedAmenityIds: params.amenityIds,
             onFacilityTypeChanged: _onFacilityTypeChanged,
             onAmenityToggled: _onAmenityToggled,
+            isOpenNow: params.isOpenNow,
+            onOpenNowChanged: _onOpenNowChanged,
+          ),
+          // ── Sort chips（UX-V9-4対応）────────────────────────────────────
+          // 検索結果の並び順を「品質順」「名前順」から選べる。
+          // ChoiceChip = ラジオボタンのような択一選択UI。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: Row(
+              children: [
+                const Icon(Icons.sort, size: 16, color: Colors.grey),
+                const SizedBox(width: 6),
+                const Text(
+                  '並び順:',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(width: 8),
+                _SortChip(
+                  label: '品質順',
+                  selected: params.sortBy == FacilitySortBy.qualityScore,
+                  onSelected: (_) => _onSortChanged(FacilitySortBy.qualityScore),
+                ),
+                const SizedBox(width: 6),
+                _SortChip(
+                  label: '名前順',
+                  selected: params.sortBy == FacilitySortBy.name,
+                  onSelected: (_) => _onSortChanged(FacilitySortBy.name),
+                ),
+              ],
+            ),
           ),
           const Divider(height: 1),
           // ── Result list ──────────────────────────────────────────────────
@@ -192,6 +256,42 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── ソートチップ ──────────────────────────────────────────────────────────────
+
+/// 選択可能な小さなチップ。ChoiceChipをコンパクトにラップする。
+class _SortChip extends StatelessWidget {
+  const _SortChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final void Function(bool) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
+        ),
+      ),
+      selected: selected,
+      onSelected: onSelected,
+      selectedColor: colorScheme.primary,
+      backgroundColor: colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
     );
   }
 }

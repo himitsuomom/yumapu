@@ -55,7 +55,7 @@ final amenityOptionsProvider =
 
 // ── Widget ────────────────────────────────────────────────────────────────────
 
-/// Horizontal scrolling chip rows for facility type and amenity filtering.
+/// Horizontal scrolling chip rows for facility type, "open now", and amenity filtering.
 ///
 /// Each amenity chip is independently toggleable: selecting or deselecting one
 /// does not affect the others (existing selections are preserved via
@@ -67,6 +67,8 @@ class FilterBar extends ConsumerWidget {
     required this.selectedAmenityIds,
     required this.onFacilityTypeChanged,
     required this.onAmenityToggled,
+    this.isOpenNow = false,
+    this.onOpenNowChanged,
   });
 
   final String? selectedFacilityTypeId;
@@ -79,6 +81,13 @@ class FilterBar extends ConsumerWidget {
   /// adding or removing it from the current selection list.
   final void Function(String id) onAmenityToggled;
 
+  /// 「今日営業中」フィルターが ON かどうか。
+  final bool isOpenNow;
+
+  /// 「今日営業中」チップが切り替えられたときに呼ばれる。
+  /// null の場合はチップを非表示にする。
+  final void Function(bool)? onOpenNowChanged;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final typesAsync = ref.watch(facilityTypeOptionsProvider);
@@ -88,7 +97,7 @@ class FilterBar extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // ── Facility type row ──────────────────────────────────────────────
+        // ── Facility type + "今日営業中" row ──────────────────────────────
         typesAsync.when(
           data: (types) {
             if (types.isEmpty) return const SizedBox.shrink();
@@ -106,6 +115,15 @@ class FilterBar extends ConsumerWidget {
                       onSelected: (selected) =>
                           onFacilityTypeChanged(selected ? t.id : null),
                     )),
+                // ── 「今日営業中」チップ ────────────────────────────────
+                // onOpenNowChanged が設定されているときだけ表示する
+                if (onOpenNowChanged != null)
+                  FilterChip(
+                    avatar: const Icon(Icons.access_time, size: 16),
+                    label: const Text('今日営業中'),
+                    selected: isOpenNow,
+                    onSelected: onOpenNowChanged,
+                  ),
               ],
             );
           },
