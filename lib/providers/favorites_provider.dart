@@ -29,9 +29,11 @@ class FavoritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
           .from('favorites')
           .select('facility_id')
           .eq('user_id', userId) as List;
+      if (!mounted) return;
       final ids = rows.map((r) => r['facility_id'] as String).toSet();
       state = AsyncData(ids);
     } catch (e, st) {
+      if (!mounted) return;
       state = AsyncError(e, st);
     }
   }

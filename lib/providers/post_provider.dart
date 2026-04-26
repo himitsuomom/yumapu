@@ -21,13 +21,28 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
 
   final Ref _ref;
 
-  /// 最新30件の投稿を取得する
+  /// 1ページあたりの取得件数
+  static const _pageSize = 20;
+
+  /// 追加ページが存在するかどうか（false = 全件取得済み）
+  bool _hasMore = true;
+
+  /// `loadMore()` が実行中かどうか（二重取得防止）
+  bool _isLoadingMore = false;
+
+  /// 外部からページ末尾かどうかを確認するためのゲッター
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _isLoadingMore;
+
+  /// 最新 _pageSize 件の投稿を取得する（初回 / プルリフレッシュ）
   Future<void> load() async {
     final client = _ref.read(supabaseClientProvider);
     if (client == null) {
       state = const AsyncData([]);
       return;
     }
+    _hasMore = true;
+    _isLoadingMore = false;
     state = const AsyncLoading();
     try {
       final session = _ref.read(sessionProvider);
@@ -37,7 +52,7 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
           .from('posts')
           .select('*, users(display_name, username, avatar_url)')
           .order('created_at', ascending: false)
-          .limit(30);
+          .limit(_pageSize);
 
       // ログイン中のユーザーのいいね済み投稿IDを取得
       Set<String> likedIds = {};
@@ -56,9 +71,69 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
         return Post.fromJson(map, isLiked: likedIds.contains(postId));
       }).toList();
 
+      // 取得件数がページサイズ未満なら最終ページ
+      _hasMore = posts.length >= _pageSize;
+
       state = AsyncData(posts);
     } catch (e, st) {
       state = AsyncError(e, st);
+    }
+  }
+
+  /// 次ページを追加取得して既存リストに追記する（無限スクロール）
+  ///
+  /// カーソルベースページング: 現在のリスト末尾の `created_at` より古い投稿を取得する。
+  /// 重複防止のため、取得済みの投稿IDをフィルタリングする。
+  Future<void> loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    final current = state.valueOrNull;
+    if (current == null || current.isEmpty) return;
+
+    final client = _ref.read(supabaseClientProvider);
+    if (client == null) return;
+
+    _isLoadingMore = true;
+
+    try {
+      final session = _ref.read(sessionProvider);
+      // 末尾投稿の created_at より古い投稿を取得（カーソル）
+      final lastCreatedAt = current.last.time;
+
+      final data = await client
+          .from('posts')
+          .select('*, users(display_name, username, avatar_url)')
+          .lt('created_at', lastCreatedAt)
+          .order('created_at', ascending: false)
+          .limit(_pageSize);
+
+      // ログイン中ユーザーのいいね済みIDを取得
+      Set<String> likedIds = {};
+      if (session != null) {
+        final postIds =
+            (data as List).map((e) => e['id'] as String).toList();
+        if (postIds.isNotEmpty) {
+          final likes = await client
+              .from('post_likes')
+              .select('post_id')
+              .eq('user_id', session.user.id)
+              .inFilter('post_id', postIds);
+          likedIds =
+              (likes as List).map((e) => e['post_id'] as String).toSet();
+        }
+      }
+
+      final newPosts = (data as List).map((e) {
+        final map = e as Map<String, dynamic>;
+        final postId = map['id'] as String;
+        return Post.fromJson(map, isLiked: likedIds.contains(postId));
+      }).toList();
+
+      _hasMore = newPosts.length >= _pageSize;
+      state = AsyncData([...current, ...newPosts]);
+    } catch (_) {
+      // loadMore の失敗は致命的ではないため無視（次回スクロールで再試行できる）
+    } finally {
+      _isLoadingMore = false;
     }
   }
 
@@ -211,6 +286,38 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
       }
     } catch (_) {
       // DB 削除失敗: ロールバック
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
+
+  /// 投稿テキストを編集する（C-3対応・自分の投稿のみ）
+  ///
+  /// 楽観的UI更新: 先に画面を更新し、DB更新失敗時は元に戻す。
+  /// RLS: posts_update_own ポリシーにより自分の投稿のみ許可される。
+  Future<void> editPost(String postId, String newContent) async {
+    final client = _ref.read(supabaseClientProvider);
+    final session = _ref.read(sessionProvider);
+    if (client == null || session == null) return;
+
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // 楽観的UI: 画面を即時更新（ユーザーが編集を確認した瞬間に反映）
+    final optimistic = current
+        .map((p) => p.id == postId ? p.copyWith(content: newContent) : p)
+        .toList();
+    state = AsyncData(optimistic);
+
+    try {
+      // DB UPDATE（RLS: auth.uid() = user_id のみ許可）
+      await client
+          .from('posts')
+          .update({'content': newContent})
+          .eq('id', postId)
+          .eq('user_id', session.user.id);
+    } catch (_) {
+      // DB更新失敗: 楽観的更新をロールバック
       state = AsyncData(current);
       rethrow;
     }

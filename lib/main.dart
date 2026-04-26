@@ -1,7 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/app.dart';
@@ -11,7 +13,14 @@ import 'package:yu_map/services/analytics_service.dart';
 import 'package:yu_map/services/subscription_service.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // A-1対応: スプラッシュ画面を初期化が完了するまで保持する。
+  // ensureInitialized() の前に呼ぶ必要がある。
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+  // 0. 日付フォーマット（intl）の日本語ロケールデータを初期化
+  //    DateFormat('yyyy/MM/dd', 'ja') などを使う前に必ず呼ぶ必要がある。
+  await initializeDateFormatting('ja');
 
   // 1. Firebase — must be initialized before any Firebase service (Analytics等).
   //    GoogleService-Info.plist / google-services.json が存在すれば初期化する。
@@ -43,6 +52,10 @@ Future<void> main() async {
 
   // 5. AnalyticsService — no-op when Firebase is not initialized.
   AnalyticsService.instance.initialise();
+
+  // A-1対応: 全ての初期化が完了したのでスプラッシュ画面を解除する。
+  // これを呼ぶまでネイティブのスプラッシュ（ロゴ入り）が表示され続ける。
+  FlutterNativeSplash.remove();
 
   // 6. Sentry — wraps runApp when DSN is provided so all errors are captured.
   if (AppConfig.isSentryConfigured) {

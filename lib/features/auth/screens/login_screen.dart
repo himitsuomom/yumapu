@@ -88,6 +88,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               hintText: 'example@email.com',
             ),
             validator: _validateEmail,
+            autofocus: true,
           ),
         ),
         actions: [
@@ -98,16 +99,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           FilledButton(
             onPressed: () async {
               if (!(resetFormKey.currentState?.validate() ?? false)) return;
+              // メールアドレスをダイアログが閉じる前に取得する
+              final emailToReset = resetEmailController.text.trim();
               Navigator.of(dialogContext).pop();
-              await ref.read(authNotifierProvider.notifier).resetPassword(
-                    resetEmailController.text.trim(),
-                  );
+              await ref
+                  .read(authNotifierProvider.notifier)
+                  .resetPassword(emailToReset);
               if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('リセットメールを送信しました'),
-                ),
-              );
+              // Bug-V6-1修正: APIの成功/失敗を確認してから適切なメッセージを表示する
+              final authState = ref.read(authNotifierProvider);
+              if (authState is AsyncError) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('送信に失敗しました。メールアドレスをご確認ください。'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('リセットメールを送信しました。受信箱をご確認ください。'),
+                  ),
+                );
+              }
             },
             child: const Text('送信'),
           ),

@@ -4,12 +4,40 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
+// ── Visit count ──────────────────────────────────────────────────────────────
+
+/// ログインユーザーの総チェックイン件数。
+/// バッジ進捗表示・プロフィール統計に使用する。
+/// COUNT クエリを使い全件取得を避ける。
+final visitCountProvider = FutureProvider.autoDispose<int>((ref) async {
+  final client = ref.read(supabaseClientProvider);
+  final session = ref.watch(sessionProvider);
+  if (client == null || session == null) return 0;
+  try {
+    final result = await client
+        .from('visits')
+        .select(
+          'id',
+          const FetchOptions(count: CountOption.exact, head: true),
+        )
+        .eq('user_id', session.user.id);
+    return result.count ?? 0;
+  } catch (_) {
+    return 0;
+  }
+});
+
 // ── Visit entity (defined here per spec) ────────────────────────────────────
 
 class Visit extends Equatable {
   final String id;
   final String userId;
   final String facilityId;
+
+  /// JOIN で取得した施設名。visitListProvider が facilities テーブルを
+  /// 一括 JOIN するため N+1 クエリが発生しない。
+  final String? facilityName;
+
   final String? note;
   final int? rating;
   final DateTime visitedAt;
@@ -19,6 +47,7 @@ class Visit extends Equatable {
     required this.id,
     required this.userId,
     required this.facilityId,
+    this.facilityName,
     this.note,
     this.rating,
     required this.visitedAt,
@@ -33,10 +62,15 @@ class Visit extends Equatable {
         ? DateTime.parse(visitedAtStr)
         : DateTime.now();
 
+    // facilities は LEFT JOIN で取得したネストオブジェクト。
+    // SELECT の形式: 'facilities(name)' → json['facilities'] が Map で届く。
+    final facilitiesJson = json['facilities'] as Map<String, dynamic>?;
+
     return Visit(
       id: json['id'] as String,
       userId: json['user_id'] as String,
       facilityId: json['facility_id'] as String,
+      facilityName: facilitiesJson?['name'] as String?,
       note: json['note'] as String?,
       rating: json['rating'] as int?,
       visitedAt: visitedAt,
@@ -53,17 +87,35 @@ class Visit extends Equatable {
 
 // ── Visit list ───────────────────────────────────────────────────────────────
 
+/// プロフィール画面用：最新 [AppConstants.pageSize] 件のみ取得（パフォーマンス優先）。
 final visitListProvider =
+    FutureProvider.autoDispose<List<Visit>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  final session = ref.watch(sessionProvider);
+  if (client == null || session == null) return [];
+  // facilities(name) を LEFT JOIN で一括取得することで N+1 クエリを防ぐ。
+  // 施設名が存在しない場合は null になり、Visit.facilityId を表示する。
+  final rows = await client
+      .from('visits')
+      .select('*, facilities(name)')
+      .eq('user_id', session.user.id)
+      .order('visited_at', ascending: false)
+      .limit(AppConstants.pageSize) as List;
+  return rows.map((r) => Visit.fromJson(r as Map<String, dynamic>)).toList();
+});
+
+/// 訪問履歴全件表示画面用：全件を月別表示のために取得する（UX-V7-1対応）。
+/// プロフィール画面の「すべて見る」から遷移した場合に使用する。
+final visitAllProvider =
     FutureProvider.autoDispose<List<Visit>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final session = ref.watch(sessionProvider);
   if (client == null || session == null) return [];
   final rows = await client
       .from('visits')
-      .select()
+      .select('*, facilities(name)')
       .eq('user_id', session.user.id)
-      .order('visited_at', ascending: false)
-      .limit(AppConstants.pageSize) as List;
+      .order('visited_at', ascending: false) as List;
   return rows.map((r) => Visit.fromJson(r as Map<String, dynamic>)).toList();
 });
 

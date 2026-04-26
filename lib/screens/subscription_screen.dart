@@ -167,9 +167,9 @@ class _PlanCards extends StatelessWidget {
         _PlanCard(
           label: '年額プラン',
           badge: 'おすすめ',
-          priceString: annual?.storeProduct.priceString ?? '—',
+          priceString: annual?.storeProduct.priceString ?? '¥2,980',
           period: '/ 年',
-          description: '月額より最大40%お得',
+          description: '月額と比べて約48%お得（¥248/月相当）',
           isHighlighted: true,
           isLoading: annualLoading,
           onTap: annual != null && !anyLoading
@@ -180,9 +180,9 @@ class _PlanCards extends StatelessWidget {
         // ── Monthly plan ───────────────────────────────────────────────
         _PlanCard(
           label: '月額プラン',
-          priceString: monthly?.storeProduct.priceString ?? '—',
+          priceString: monthly?.storeProduct.priceString ?? '¥480',
           period: '/ 月',
-          description: 'いつでもキャンセル可能',
+          description: '1日あたりわずか¥16 • いつでも解約可能',
           isHighlighted: false,
           isLoading: monthlyLoading,
           onTap: monthly != null && !anyLoading ? onPurchaseMonthly : null,
@@ -372,7 +372,7 @@ class _ComingSoonCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'プレミアムプランは現在準備中です。\nもうしばらくお待ちください。',
+              'プレミアムプランは現在準備中です。\nもうしばらくお待ちください。\n\n月額 ¥480 / 年額 ¥2,980 を予定しています。',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: const Color(0xFF757575),

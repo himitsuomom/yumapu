@@ -3,12 +3,14 @@
 // バッジ一覧画面
 // ユーザーが獲得したバッジをグリッド形式で表示する。
 // 「全バッジ / 獲得済み」をタブで切り替えられる。
+// 未獲得のバッジに進捗インジケーター（あとX回など）を表示する。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:yu_map/models/badge.dart';
 import 'package:yu_map/providers/badge_provider.dart';
+import 'package:yu_map/providers/visit_provider.dart';
 
 class BadgeScreen extends ConsumerStatefulWidget {
   const BadgeScreen({super.key});
@@ -25,7 +27,6 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
   @override
   void initState() {
     super.initState();
-    // TabController = タブの切り替えを管理するコントローラー
     _tabController = TabController(length: 2, vsync: this);
   }
 
@@ -39,6 +40,8 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
   Widget build(BuildContext context) {
     final myBadgesAsync = ref.watch(myBadgesProvider);
     final allBadgesAsync = ref.watch(allBadgesProvider);
+    // チェックイン数（進捗表示に使用）
+    final checkInCount = ref.watch(visitCountProvider).valueOrNull ?? 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -61,6 +64,7 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
                 : _EarnedBadgeGrid(
                     badges: badges,
                     dateFormat: _dateFormat,
+                    checkInCount: checkInCount,
                   ),
             loading: () =>
                 const Center(child: CircularProgressIndicator()),
@@ -71,7 +75,6 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
           // ── 全バッジタブ ──────────────────────────────────────────────
           allBadgesAsync.when(
             data: (allBadges) {
-              // 獲得済み badge の ID セットを使ってロック状態を判定
               final earnedIds = myBadgesAsync.valueOrNull
                       ?.map((ub) => ub.badge.id)
                       .toSet() ??
@@ -79,6 +82,7 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
               return _AllBadgeList(
                 allBadges: allBadges,
                 earnedIds: earnedIds,
+                checkInCount: checkInCount,
               );
             },
             loading: () =>
@@ -98,10 +102,12 @@ class _EarnedBadgeGrid extends StatelessWidget {
   const _EarnedBadgeGrid({
     required this.badges,
     required this.dateFormat,
+    required this.checkInCount,
   });
 
   final List<UserBadge> badges;
   final DateFormat dateFormat;
+  final int checkInCount;
 
   @override
   Widget build(BuildContext context) {
@@ -109,10 +115,10 @@ class _EarnedBadgeGrid extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: GridView.builder(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,       // 3列
+          crossAxisCount: 3,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
-          childAspectRatio: 0.85,  // 縦長にしてテキストを収める
+          childAspectRatio: 0.8,
         ),
         itemCount: badges.length,
         itemBuilder: (context, index) {
@@ -122,6 +128,7 @@ class _EarnedBadgeGrid extends StatelessWidget {
             earnedAt: ub.earnedAt,
             dateFormat: dateFormat,
             isEarned: true,
+            checkInCount: checkInCount,
           );
         },
       ),
@@ -135,10 +142,12 @@ class _AllBadgeList extends StatelessWidget {
   const _AllBadgeList({
     required this.allBadges,
     required this.earnedIds,
+    required this.checkInCount,
   });
 
   final List<AppBadge> allBadges;
   final Set<String> earnedIds;
+  final int checkInCount;
 
   @override
   Widget build(BuildContext context) {
@@ -166,14 +175,14 @@ class _AllBadgeList extends StatelessWidget {
               ),
             ),
             GridView.builder(
-              shrinkWrap: true,     // ListView の子として使うために必要
+              shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate:
                   const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
-                childAspectRatio: 0.85,
+                childAspectRatio: 0.8,
               ),
               itemCount: entry.value.length,
               itemBuilder: (context, index) {
@@ -183,6 +192,7 @@ class _AllBadgeList extends StatelessWidget {
                   earnedAt: null,
                   dateFormat: null,
                   isEarned: earnedIds.contains(badge.id),
+                  checkInCount: checkInCount,
                 );
               },
             ),
@@ -202,20 +212,24 @@ class _BadgeTile extends StatelessWidget {
     required this.earnedAt,
     required this.dateFormat,
     required this.isEarned,
+    required this.checkInCount,
   });
 
   final AppBadge badge;
   final DateTime? earnedAt;
   final DateFormat? dateFormat;
   final bool isEarned;
+  final int checkInCount;
 
   @override
   Widget build(BuildContext context) {
+    // visit_count 型のバッジについて進捗を計算する
+    final progressInfo = _computeProgress();
+
     return GestureDetector(
       onTap: () => _showDetail(context),
       child: AnimatedOpacity(
-        // 未獲得バッジは半透明でグレーアウト表示
-        opacity: isEarned ? 1.0 : 0.35,
+        opacity: isEarned ? 1.0 : 0.55,
         duration: const Duration(milliseconds: 200),
         child: Card(
           child: Padding(
@@ -224,19 +238,20 @@ class _BadgeTile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // アイコン表示（URL があれば画像、なければ絵文字）
-                _BadgeIcon(badge: badge, size: 40),
-                const SizedBox(height: 6),
+                _BadgeIcon(badge: badge, size: 36),
+                const SizedBox(height: 4),
                 Text(
                   badge.nameJa,
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w600,
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (earnedAt != null && dateFormat != null) ...[
+                // 獲得済みの場合は取得日を表示
+                if (isEarned && earnedAt != null && dateFormat != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     dateFormat!.format(earnedAt!),
@@ -244,6 +259,25 @@ class _BadgeTile extends StatelessWidget {
                       fontSize: 9,
                       color: Color(0xFF757575),
                     ),
+                  ),
+                ],
+                // 未獲得でvisit_count型の場合は進捗バーを表示
+                if (!isEarned && progressInfo != null) ...[
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(
+                    value: progressInfo.progressRatio.clamp(0.0, 1.0),
+                    backgroundColor: Colors.grey.shade200,
+                    color: const Color(0xFF1565C0),
+                    minHeight: 3,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    progressInfo.remainText,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF1565C0),
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ],
@@ -254,8 +288,26 @@ class _BadgeTile extends StatelessWidget {
     );
   }
 
+  /// visit_count 型バッジの進捗情報を返す。
+  /// 他タイプのバッジは null を返す（進捗表示なし）。
+  _ProgressInfo? _computeProgress() {
+    if (isEarned) return null;
+    final type = badge.requirements['type'] as String?;
+    if (type != 'visit_count') return null;
+    final required = (badge.requirements['count'] as num?)?.toInt() ?? 0;
+    if (required <= 0) return null;
+
+    final current = checkInCount.clamp(0, required);
+    final remain = required - current;
+    return _ProgressInfo(
+      current: current,
+      total: required,
+      progressRatio: current / required,
+      remainText: remain > 0 ? 'あと$remain回' : 'もうすぐ！',
+    );
+  }
+
   void _showDetail(BuildContext context) {
-    // タップで詳細ダイアログを表示
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
@@ -270,10 +322,46 @@ class _BadgeTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (badge.descriptionJa != null) ...[
+            // バッジの説明文（DBに登録されている場合）
+            if (badge.descriptionJa != null && badge.descriptionJa!.isNotEmpty) ...[
               Text(badge.descriptionJa!),
               const SizedBox(height: 8),
             ],
+            // 獲得条件（requirementsから生成）
+            Text(
+              '📋 獲得条件: ${badge.requirementText}',
+              style: const TextStyle(fontSize: 13),
+            ),
+            // 進捗（visit_count型かつ未獲得の場合）
+            if (!isEarned) ...[
+              (() {
+                final info = _computeProgress();
+                if (info == null) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      value: info.progressRatio.clamp(0.0, 1.0),
+                      backgroundColor: Colors.grey.shade200,
+                      color: const Color(0xFF1565C0),
+                      minHeight: 6,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '現在: ${info.current} / ${info.total} 回 (${info.remainText})',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1565C0),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                );
+              })(),
+            ],
+            // カテゴリ
+            const SizedBox(height: 8),
             Text(
               'カテゴリ: ${badge.categoryLabel}',
               style: const TextStyle(
@@ -281,6 +369,7 @@ class _BadgeTile extends StatelessWidget {
                 color: Color(0xFF757575),
               ),
             ),
+            // 獲得日（獲得済みの場合）
             if (isEarned && earnedAt != null) ...[
               const SizedBox(height: 4),
               Text(
@@ -291,7 +380,7 @@ class _BadgeTile extends StatelessWidget {
                 ),
               ),
             ] else if (!isEarned) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               const Text(
                 '🔒 まだ獲得していません',
                 style: TextStyle(fontSize: 12, color: Color(0xFF757575)),
@@ -308,6 +397,22 @@ class _BadgeTile extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── 進捗情報 ──────────────────────────────────────────────────────────────────
+
+class _ProgressInfo {
+  const _ProgressInfo({
+    required this.current,
+    required this.total,
+    required this.progressRatio,
+    required this.remainText,
+  });
+
+  final int current;
+  final int total;
+  final double progressRatio;
+  final String remainText;
 }
 
 // ── バッジアイコン ─────────────────────────────────────────────────────────────

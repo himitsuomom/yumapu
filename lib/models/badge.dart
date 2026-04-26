@@ -74,6 +74,37 @@ class AppBadge {
     }
   }
 
+  /// requirements フィールドから人間が読めるテキストを生成する。
+  /// バッジ詳細ダイアログの「獲得条件」欄に表示する。
+  String get requirementText {
+    final type = requirements['type'] as String?;
+    switch (type) {
+      case 'visit_count':
+        final count = (requirements['count'] as num?)?.toInt() ?? 0;
+        return 'チェックインを$count回達成';
+      case 'prefecture':
+        final name = requirements['name'] as String? ?? '';
+        return '$nameの施設を訪問';
+      case 'spring_type':
+        final code = requirements['spring_code'] as String? ?? '';
+        return '「$code」の泉質施設を訪問';
+      case 'spring_all':
+        final count = (requirements['count'] as num?)?.toInt() ?? 0;
+        return '全$count種の泉質施設を制覇';
+      case 'review_count':
+        final count = (requirements['count'] as num?)?.toInt() ?? 0;
+        return 'レビューを$count件投稿';
+      case 'post_count':
+        final count = (requirements['count'] as num?)?.toInt() ?? 0;
+        return '投稿を$count件作成';
+      default:
+        if (descriptionJa != null && descriptionJa!.isNotEmpty) {
+          return descriptionJa!;
+        }
+        return '詳細は未公開';
+    }
+  }
+
   /// アイコン表示用。icon_url があればそれを返し、なければカテゴリ絵文字を返す。
   String get displayIcon {
     if (iconUrl != null && iconUrl!.isNotEmpty) return iconUrl!;

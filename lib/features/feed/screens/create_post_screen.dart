@@ -2,14 +2,18 @@
 //
 // 投稿作成画面
 // テキストと任意の画像を入力して温泉レポートを投稿する。
-// 施設名を任意で紐付けることができる。
+// 施設を検索して選択することで、facility_id を正しく紐付けられる。
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/post_provider.dart';
+import 'package:yu_map/services/facility_service.dart';
 
 class CreatePostScreen extends ConsumerStatefulWidget {
   const CreatePostScreen({super.key});
@@ -21,17 +25,19 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _formKey = GlobalKey<FormState>();
   final _contentController = TextEditingController();
-  final _facilityNameController = TextEditingController();
   final _imagePicker = ImagePicker();
 
   /// ユーザーが選択した画像ファイル（null = 未選択）
   XFile? _pickedImage;
   bool _isSubmitting = false;
 
+  /// Bug-2修正: 施設名だけでなくIDも保持する
+  String? _selectedFacilityId;
+  String _selectedFacilityName = '';
+
   @override
   void dispose() {
     _contentController.dispose();
-    _facilityNameController.dispose();
     super.dispose();
   }
 
@@ -55,6 +61,32 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     setState(() => _pickedImage = null);
   }
 
+  /// 施設選択ダイアログを開く
+  Future<void> _openFacilityPicker() async {
+    final service = ref.read(facilityServiceProvider);
+    if (service == null) return;
+
+    final result = await showDialog<Facility>(
+      context: context,
+      builder: (_) => _FacilitySearchDialog(service: service),
+    );
+
+    if (result != null) {
+      setState(() {
+        _selectedFacilityId = result.id;
+        _selectedFacilityName = result.name;
+      });
+    }
+  }
+
+  /// 選択した施設をリセットする
+  void _clearFacility() {
+    setState(() {
+      _selectedFacilityId = null;
+      _selectedFacilityName = '';
+    });
+  }
+
   Future<void> _submit() async {
     // フォームのバリデーション（入力チェック）を実行
     if (!(_formKey.currentState?.validate() ?? false)) return;
@@ -73,7 +105,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
       await ref.read(postFeedProvider.notifier).createPost(
             content: _contentController.text.trim(),
-            facilityName: _facilityNameController.text.trim(),
+            // Bug-2修正: facilityId を正しく渡す
+            facilityId: _selectedFacilityId,
+            facilityName: _selectedFacilityName,
             imageUrl: imageUrl,
           );
 
@@ -144,16 +178,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── 施設名入力（任意） ────────────────────────────────────
-            TextFormField(
-              controller: _facilityNameController,
-              maxLength: 100,
-              decoration: const InputDecoration(
-                labelText: '施設名（任意）',
-                hintText: '例）別府温泉 竹瓦温泉',
-                prefixIcon: Icon(Icons.hot_tub),
-                border: OutlineInputBorder(),
-              ),
+            // ── 施設選択（任意）──────────────────────────────────────
+            // Bug-2修正: テキスト手入力→施設検索+選択に変更
+            // 施設を選択すると facility_id が正しく設定される
+            _FacilityPickerTile(
+              selectedFacilityName: _selectedFacilityName.isEmpty
+                  ? null
+                  : _selectedFacilityName,
+              onTap: _openFacilityPicker,
+              onClear: _selectedFacilityId != null ? _clearFacility : null,
             ),
             const SizedBox(height: 16),
 
@@ -182,6 +215,248 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 }
 
+// ── 施設選択タイル ─────────────────────────────────────────────────────────────
+
+/// 施設選択済みか否かで表示を切り替えるタイル。
+/// タップで施設検索ダイアログを開く。
+class _FacilityPickerTile extends StatelessWidget {
+  const _FacilityPickerTile({
+    required this.selectedFacilityName,
+    required this.onTap,
+    this.onClear,
+  });
+
+  final String? selectedFacilityName;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = selectedFacilityName != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).dividerColor,
+          ),
+          borderRadius: BorderRadius.circular(8),
+          color: isSelected
+              ? Theme.of(context).colorScheme.primaryContainer.withAlpha(80)
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.hot_tub,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey.shade500,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                isSelected ? selectedFacilityName! : '施設を選択（任意）',
+                style: TextStyle(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Colors.grey.shade500,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            // 施設選択済みならクリアボタンを表示
+            if (onClear != null)
+              GestureDetector(
+                onTap: onClear,
+                child: Icon(Icons.close, color: Colors.grey.shade500, size: 20),
+              )
+            else
+              Icon(Icons.search, color: Colors.grey.shade400, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 施設検索ダイアログ ─────────────────────────────────────────────────────────
+
+/// 施設名で施設を検索し、選択した Facility を返すダイアログ。
+class _FacilitySearchDialog extends StatefulWidget {
+  const _FacilitySearchDialog({required this.service});
+
+  final FacilityService service;
+
+  @override
+  State<_FacilitySearchDialog> createState() => _FacilitySearchDialogState();
+}
+
+class _FacilitySearchDialogState extends State<_FacilitySearchDialog> {
+  final _searchController = TextEditingController();
+  Timer? _debounce;
+  List<Facility> _results = [];
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// 400ms のdebounce付きで施設を検索する。
+  void _onSearchChanged(String query) {
+    _debounce?.cancel();
+    if (query.trim().isEmpty) {
+      setState(() => _results = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) return;
+      setState(() => _isLoading = true);
+      try {
+        final results = await widget.service.searchFacilities(
+          searchQuery: query.trim(),
+        );
+        if (mounted) setState(() => _results = results);
+      } catch (_) {
+        if (mounted) setState(() => _results = []);
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── タイトル ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                const Text(
+                  '施設を検索',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+
+          // ── 検索フィールド ────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: '施設名で検索（例: 草津温泉）',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _results = []);
+                        },
+                      )
+                    : null,
+              ),
+            ),
+          ),
+
+          // ── 検索結果一覧 ──────────────────────────────────────────
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.4,
+              ),
+              child: _buildResultList(),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultList() {
+    if (_isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_searchController.text.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            '施設名を入力して検索してください',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
+    if (_results.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('施設が見つかりませんでした',
+              style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      itemCount: _results.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final facility = _results[index];
+        return ListTile(
+          leading: const Icon(Icons.hot_tub_outlined),
+          title: Text(facility.name),
+          subtitle: facility.address != null
+              ? Text(
+                  facility.address!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                )
+              : null,
+          onTap: () => Navigator.of(context).pop(facility),
+        );
+      },
+    );
+  }
+}
+
 // ── 画像未選択時のボタン ──────────────────────────────────────────────────────
 
 class _ImagePickerButton extends StatelessWidget {
@@ -202,7 +477,10 @@ class _ImagePickerButton extends StatelessWidget {
             style: BorderStyle.solid,
           ),
           borderRadius: BorderRadius.circular(8),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(77),
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withAlpha(77),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

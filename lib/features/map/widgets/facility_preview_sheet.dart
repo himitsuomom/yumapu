@@ -13,42 +13,24 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/providers/facility_provider.dart'
+    show facilityPhotosProvider;
 import 'package:yu_map/providers/favorites_provider.dart';
-import 'package:yu_map/providers/review_provider.dart';
+import 'package:yu_map/providers/review_provider.dart'
+    show
+        reviewListProvider,
+        facilityReviewSummaryProvider;
+import 'package:yu_map/services/checkin_service.dart';
 
 // ── 写真 + アメニティ取得用プロバイダー ────────────────────────────────────────
-
-/// 施設の写真URLリスト（最新5枚）を取得する。
-/// autoDispose: シートが閉じたら自動でキャッシュ解放。
-final _facilityPhotosProvider =
-    FutureProvider.autoDispose.family<List<String>, String>(
-  (ref, facilityId) async {
-    final client = ref.read(supabaseClientProvider);
-    if (client == null) return [];
-    try {
-      final rows = await client
-          .from('photos')
-          .select('storage_path, thumbnail_path')
-          .eq('facility_id', facilityId)
-          .order('created_at', ascending: false)
-          .limit(5) as List;
-
-      return rows.map((row) {
-        final path = row['thumbnail_path'] as String? ??
-            row['storage_path'] as String?;
-        if (path == null || path.isEmpty) return '';
-        return client.storage.from('photos').getPublicUrl(path);
-      }).where((url) => url.isNotEmpty).toList();
-    } catch (_) {
-      return [];
-    }
-  },
-);
+// 写真プロバイダーは facility_provider.dart の facilityPhotosProvider を共有使用。
 
 /// 施設のアメニティ一覧（有効なものだけ）を取得する。
 final _facilityAmenitiesProvider =
@@ -103,16 +85,130 @@ class _FacilityPreviewSheetState
     extends ConsumerState<FacilityPreviewSheet> {
   int _currentPhotoIndex = 0;
 
+  /// 写真アップロード中フラグ（二重タップ防止）
+  bool _isUploadingPhoto = false;
+
+  /// チェックイン処理中フラグ（二重タップ防止）
+  bool _isCheckingIn = false;
+
+  // ── 写真アップロード ───────────────────────────────────────────────────────
+
+  /// ギャラリーから写真を選択して Supabase Storage にアップロードし、
+  /// photos テーブルに記録する。
+  ///
+  /// アップロード先: photos バケット / facilities/{facilityId}/{uuid}.{ext}
+  /// 完了後: facilityPhotosProvider を invalidate してカルーセルを更新する。
+  Future<void> _pickAndUploadPhoto() async {
+    // ログイン確認（未ログインならダイアログで促す）
+    final session = ref.read(sessionProvider);
+    if (session == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('写真を投稿するにはログインが必要です'),
+          action: SnackBarAction(
+            label: 'ログイン',
+            onPressed: () => Navigator.of(context).pushNamed('/login'),
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 二重タップ防止
+    if (_isUploadingPhoto) return;
+
+    // ギャラリーから画像選択
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 85,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _isUploadingPhoto = true);
+
+    try {
+      final client = ref.read(supabaseClientProvider);
+      if (client == null) throw Exception('接続エラー');
+
+      final userId = session.user.id;
+      final facilityId = widget.facility.id;
+
+      // 拡張子を安全な値に変換する（jpg/jpeg/png/webpのみ許可）
+      final rawExt = picked.path.split('.').last.toLowerCase();
+      final safeExt =
+          ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt) ? rawExt : 'jpg';
+      final fileName = '${const Uuid().v4()}.$safeExt';
+      final storagePath = 'facilities/$facilityId/$fileName';
+
+      // バイト列を読み込んで Supabase Storage にアップロード
+      final bytes = await picked.readAsBytes();
+      await client.storage.from('photos').uploadBinary(
+            storagePath,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: 'image/$safeExt',
+              upsert: false,
+            ),
+          );
+
+      // photos テーブルに記録する（facility_id と user_id を必須で設定）
+      await client.from('photos').insert({
+        'user_id': userId,
+        'facility_id': facilityId,
+        'storage_path': storagePath,
+      });
+
+      if (!mounted) return;
+
+      // 写真一覧プロバイダーをリセットしてカルーセルを更新する
+      ref.invalidate(facilityPhotosProvider(facilityId));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('写真を投稿しました')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('投稿に失敗しました: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
+  }
+
+  // ── チェックイン ───────────────────────────────────────────────────────────
+
+  /// チェックイン処理を CheckinService に委譲する。
+  /// ロジックの詳細は lib/services/checkin_service.dart を参照。
+  Future<void> _showCheckinDialog() async {
+    if (_isCheckingIn) return;
+    await CheckinService.performCheckin(
+      context: context,
+      ref: ref,
+      facility: widget.facility,
+      setCheckingIn: (v) {
+        if (mounted) setState(() => _isCheckingIn = v);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final facility = widget.facility;
     final isFav = ref.watch(isFavoriteProvider(facility.id));
     final typeColor = _colorForType(facility.facilityType);
 
-    // 写真・クチコミ・アメニティを並列取得
-    final photosAsync = ref.watch(_facilityPhotosProvider(facility.id));
+    // 写真・クチコミ・アメニティを並列取得（4並列に最適化済み）
+    // facilityReviewSummaryProvider が reviewCountProvider + facilityAvgRatingProvider を統合し、
+    // 旧5並列 → 4並列に削減した（APIコール削減）。
+    final photosAsync = ref.watch(facilityPhotosProvider(facility.id));
     final reviewsAsync = ref.watch(reviewListProvider(facility.id));
-    final reviewCountAsync = ref.watch(reviewCountProvider(facility.id));
+    // 統合プロバイダー: count + avgRating を1回のRPC呼び出しで取得
+    final reviewSummaryAsync = ref.watch(facilityReviewSummaryProvider(facility.id));
     final amenitiesAsync = ref.watch(_facilityAmenitiesProvider(facility.id));
 
     return DraggableScrollableSheet(
@@ -220,39 +316,48 @@ class _FacilityPreviewSheetState
                                   height: 1.2,
                                 ),
                               ),
-                              // 星評価（クチコミデータがあれば表示）
-                              reviewsAsync.whenOrNull(
-                                data: (reviews) {
-                                  if (reviews.isEmpty) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        'クチコミなし',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[400],
-                                        ),
+                              // 星評価（Bug-V7-2修正: サーバーサイドAVGを使用）
+                              Builder(builder: (_) {
+                                // 統合プロバイダーから count + avgRating を取得
+                                final summary = reviewSummaryAsync.valueOrNull;
+                                final reviewCount = summary?.count ?? 0;
+
+                                if (reviewCount == 0) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      'クチコミなし',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[400],
                                       ),
-                                    );
-                                  }
-                                  final avg = reviews
+                                    ),
+                                  );
+                                }
+
+                                // RPC未応答の間はロードレビューの平均をフォールバックに使う
+                                final avgFromLoaded = () {
+                                  final reviews =
+                                      reviewsAsync.valueOrNull ?? [];
+                                  if (reviews.isEmpty) return 0.0;
+                                  return reviews
                                           .map((r) => r.rating)
                                           .fold(0, (a, b) => a + b) /
                                       reviews.length;
-                                  final totalCount =
-                                      reviewCountAsync.valueOrNull ??
-                                          reviews.length;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: _StarRating(
-                                      avg: avg,
-                                      count: totalCount,
-                                      color: typeColor,
-                                    ),
-                                  );
-                                },
-                              ) ??
-                                  const SizedBox.shrink(),
+                                }();
+                                final avg = summary != null && summary.avgRating > 0
+                                    ? summary.avgRating
+                                    : avgFromLoaded;
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: _StarRating(
+                                    avg: avg,
+                                    count: reviewCount,
+                                    color: typeColor,
+                                  ),
+                                );
+                              }),
 
                               // アメニティチップ（施設名の直下に移動）
                               amenitiesAsync.whenOrNull(
@@ -425,8 +530,8 @@ class _FacilityPreviewSheetState
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                // reviewCountProvider で正確な総件数を表示
-                                '(${reviewCountAsync.valueOrNull ?? reviews.length}件)',
+                                // 統合プロバイダーの count を使用（正確な総件数）
+                                '(${reviewSummaryAsync.valueOrNull?.count ?? reviews.length}件)',
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500]),
@@ -446,70 +551,25 @@ class _FacilityPreviewSheetState
               const SliverToBoxAdapter(
                   child: Divider(height: 1)),
 
-              // ── 「クチコミを書く」ボタン ───────────────────────────
+              // ── チェックインボタン（主要アクション）─────────────────
+              // UX-V7-3修正: チェックインをFilledButtonにして主要アクションとして明確化。
+              // バッジ獲得・ランキング反映という湯マップのコア機能を最も目立たせる。
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      final isSignedIn =
-                          ref.read(isSignedInProvider);
-                      if (!isSignedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('クチコミを書くにはログインが必要です')),
-                        );
-                        return;
-                      }
-                      showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(16)),
-                        ),
-                        builder: (_) => ReviewBottomSheet(
-                          facilityId: facility.id,
-                          onSubmitted: () {
-                            ref.invalidate(
-                                reviewListProvider(facility.id));
-                            ref.invalidate(
-                                reviewCountProvider(facility.id));
-                          },
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.rate_review_outlined,
-                        size: 18),
-                    label: const Text(
-                      'クチコミを書く',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: typeColor,
-                      side: BorderSide(
-                          color: typeColor.withValues(alpha: 0.5)),
-                      minimumSize: const Size.fromHeight(44),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // ── 「詳細を見る」ボタン ────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 6, 16, 24),
                   child: FilledButton.icon(
-                    onPressed: widget.onOpenDetail,
-                    icon: const Icon(Icons.open_in_new, size: 18),
-                    label: const Text(
-                      'チェックインなど詳細を見る',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    onPressed: _isCheckingIn ? null : _showCheckinDialog,
+                    icon: _isCheckingIn
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check_circle_outline, size: 18),
+                    label: Text(
+                      _isCheckingIn ? 'チェックイン中...' : 'チェックイン',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: typeColor,
@@ -518,6 +578,92 @@ class _FacilityPreviewSheetState
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                  ),
+                ),
+              ),
+
+              // ── 「クチコミを書く」「詳細を見る」ボタン（副次アクション・横並び）
+              // UX-V7-3修正: 副次アクションは横並びのOutlinedButtonにして優先度を下げる。
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  child: Row(
+                    children: [
+                      // クチコミを書く
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            final isSignedIn =
+                                ref.read(isSignedInProvider);
+                            if (!isSignedIn) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('クチコミを書くにはログインが必要です'),
+                                  action: SnackBarAction(
+                                    label: 'ログイン',
+                                    onPressed: () =>
+                                        Navigator.of(context).pushNamed('/login'),
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(16)),
+                              ),
+                              builder: (_) => ReviewBottomSheet(
+                                facilityId: facility.id,
+                                onSubmitted: () {
+                                  ref.invalidate(
+                                      reviewListProvider(facility.id));
+                                  // 統合プロバイダーを invalidate してカウント・平均を再取得
+                                  ref.invalidate(
+                                      facilityReviewSummaryProvider(facility.id));
+                                },
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.rate_review_outlined, size: 16),
+                          label: const Text(
+                            'クチコミ',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: typeColor,
+                            side: BorderSide(
+                                color: typeColor.withValues(alpha: 0.5)),
+                            minimumSize: const Size.fromHeight(44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // 詳細を見る
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: widget.onOpenDetail,
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: const Text(
+                            '詳細',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.grey[700],
+                            side: BorderSide(color: Colors.grey[400]!),
+                            minimumSize: const Size.fromHeight(44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -546,7 +692,7 @@ class _FacilityPreviewSheetState
             : Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.hot_tub,
+                  Icon(Icons.camera_alt_outlined,
                       size: 44, color: typeColor.withValues(alpha: 0.4)),
                   const SizedBox(height: 6),
                   Text(
@@ -554,6 +700,25 @@ class _FacilityPreviewSheetState
                     style: TextStyle(
                         color: Colors.grey[400], fontSize: 12),
                   ),
+                  const SizedBox(height: 10),
+                  // 写真を追加するボタン（ログイン不要でタップさせ、未ログインならSnackBar誘導）
+                  _isUploadingPhoto
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: typeColor),
+                        )
+                      : FilledButton.tonalIcon(
+                          onPressed: _pickAndUploadPhoto,
+                          icon: const Icon(Icons.add_photo_alternate, size: 16),
+                          label: const Text('写真を追加'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
                 ],
               ),
       ),
@@ -616,6 +781,51 @@ class _FacilityPreviewSheetState
                 ),
               ),
             ),
+          // 写真を追加ボタン（左下）— 写真がある場合でも追加できる
+          Positioned(
+            left: 10,
+            bottom: 10,
+            child: _isUploadingPhoto
+                ? Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                  )
+                : GestureDetector(
+                    onTap: _pickAndUploadPhoto,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_a_photo,
+                              color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text(
+                            '写真を追加',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
         ],
       ),
     );

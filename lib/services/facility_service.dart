@@ -2,6 +2,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 
+/// 検索結果のソート順。
+///
+/// - [qualityScore]: データ品質スコア降順（デフォルト）
+/// - [name]: 施設名のよみがな昇順（あいうえお順）
+/// - [distance]: 現在地から近い順（クライアント側でソート）
+enum FacilitySortBy { qualityScore, name, distance }
+
 /// Handles all facility queries against Supabase.
 ///
 /// Injected with a [SupabaseClient] so it can be mocked in tests.
@@ -35,15 +42,30 @@ class FacilityService {
     double? longitude,
     double? radiusMeters,
     int page = 0,
+    FacilitySortBy sortBy = FacilitySortBy.qualityScore,
   }) async {
     if (latitude != null && longitude != null && radiusMeters != null) {
-      return _searchByBounds(
+      var results = await _searchByBounds(
         latitude: latitude,
         longitude: longitude,
         radiusMeters: radiusMeters,
         amenityIds: amenityIds,
+        facilityTypeId: facilityTypeId,
         facilityLimit: AppConstants.pageSize,
       );
+      // Bug-V12-1修正: bounds 検索は RPC 側でテキストフィルターを持たないため、
+      // searchQuery がある場合はクライアント側で名前・住所の部分一致フィルターを適用する。
+      // 例: 地図上で「草津」と入力すると、現在の表示範囲内の施設を
+      //     名前/住所に"草津"を含むものだけに絞り込む。
+      if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+        final q = searchQuery.trim().toLowerCase();
+        results = results.where((f) {
+          final nameMatch = f.name.toLowerCase().contains(q);
+          final addressMatch = (f.address ?? '').toLowerCase().contains(q);
+          return nameMatch || addressMatch;
+        }).toList();
+      }
+      return results;
     }
 
     // facility_types をネスト取得して facilityType（code）も一緒に返す
@@ -55,7 +77,10 @@ class FacilityService {
         );
 
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
-      query = query.ilike('name', '%${searchQuery.trim()}%');
+      // UX-V7-2: 施設名だけでなく住所（エリア・地名）でも検索できるように or() フィルターを使用。
+      // 例: 「草津」→ 施設名「草津温泉○○」や住所「群馬県吾妻郡草津町」の両方にマッチする。
+      final q = searchQuery.trim();
+      query = query.or('name.ilike.%$q%,address.ilike.%$q%');
     }
     if (prefectureId != null) {
       query = query.eq('prefecture_id', prefectureId);
@@ -66,8 +91,15 @@ class FacilityService {
 
     final from = page * AppConstants.pageSize;
     final to = from + AppConstants.pageSize - 1;
+
+    // ソート順をパラメータで切り替える
+    // qualityScore: データ品質の高い施設を上に（降順）
+    // name: よみがな（name_kana）のあいうえお順（昇順）
+    final sortField = sortBy == FacilitySortBy.name ? 'name_kana' : 'data_quality_score';
+    final ascending = sortBy == FacilitySortBy.name;
+
     final rows = await query
-        .order('data_quality_score', ascending: false)
+        .order(sortField, ascending: ascending)
         .range(from, to) as List;
 
     if (amenityIds != null && amenityIds.isNotEmpty) {
@@ -104,6 +136,53 @@ class FacilityService {
     }
   }
 
+  /// 複数の施設を ID リストで一括取得する（N+1 防止）。
+  ///
+  /// Supabase の `inFilter` を使って1回のクエリで全施設を取得する。
+  /// [ids] の順序を維持して返す（取得できなかった施設は除外）。
+  Future<List<Facility>> getFacilitiesByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+
+    // キャッシュで全件解決できる場合は DB アクセスなし
+    final cached = ids
+        .map((id) => _cache.containsKey(id)
+            ? Facility.fromJson(_cache[id] as Map<String, dynamic>)
+            : null)
+        .whereType<Facility>()
+        .toList();
+    if (cached.length == ids.length) {
+      // ids の順序を維持する
+      final cachedMap = {for (final f in cached) f.id: f};
+      return ids.map((id) => cachedMap[id]).whereType<Facility>().toList();
+    }
+
+    try {
+      final rows = await _client
+          .from('facilities')
+          .select(
+            'id, name, name_kana, latitude, longitude, address, phone, '
+            'website, prefecture_id, facility_type_id, '
+            'facility_types(code), '
+            'business_hours, price_info, hours, price, '
+            'data_source, data_quality_score',
+          )
+          .inFilter('id', ids) as List;
+      _updateCache(rows);
+      // DB から返ってくる順序は不定なので ids の順に並べ直す
+      final rowMap = <String, Map<String, dynamic>>{};
+      for (final r in rows) {
+        final m = r as Map<String, dynamic>;
+        rowMap[m['id'] as String] = m;
+      }
+      return ids
+          .where((id) => rowMap.containsKey(id))
+          .map((id) => Facility.fromJson(rowMap[id]!))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Remove a single entry from the cache (e.g. after a user edit).
   void evict(String facilityId) => _cache.remove(facilityId);
 
@@ -119,6 +198,7 @@ class FacilityService {
     required double longitude,
     required double radiusMeters,
     List<String>? amenityIds,
+    String? facilityTypeId,
     int facilityLimit = 500,
   }) async {
     final radiusDeg = radiusMeters / 111000.0;
@@ -132,6 +212,7 @@ class FacilityService {
         'filter_amenities':
             (amenityIds != null && amenityIds.isNotEmpty) ? amenityIds : null,
         'facility_limit': facilityLimit,
+        'filter_facility_type': facilityTypeId,
       },
     ) as List;
 

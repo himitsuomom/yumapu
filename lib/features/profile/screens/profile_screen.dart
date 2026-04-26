@@ -5,8 +5,10 @@ import 'package:yu_map/core/widgets/empty_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/domain/entities/user.dart' as app;
 import 'package:yu_map/providers/auth_provider.dart';
-import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
+import 'package:yu_map/models/onsen_plan.dart';
+import 'package:yu_map/providers/plan_provider.dart';
+import 'package:yu_map/providers/badge_provider.dart';
 import 'package:yu_map/providers/ranking_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
 import 'package:yu_map/widgets/crown_badge.dart';
@@ -36,17 +38,22 @@ class ProfileScreen extends ConsumerWidget {
 
     final userAsync = ref.watch(currentUserProfileProvider);
     final visitAsync = ref.watch(visitListProvider);
+    // visitCountProvider で正確な総件数を取得する（visitListProvider は上限20件）
+    final visitCountAsync = ref.watch(visitCountProvider);
     final favoritesAsync = ref.watch(favoritesProvider);
     final myRankingAsync = ref.watch(myRankingProvider);
+    final plansAsync = ref.watch(myPlansProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('プロフィール')),
       body: userAsync.when(
         data: (user) => _buildContent(
-            context, ref, user, visitAsync, favoritesAsync, myRankingAsync),
+            context, ref, user, visitAsync, visitCountAsync,
+            favoritesAsync, myRankingAsync, plansAsync),
         loading: () => const LoadingWidget(),
         error: (_, __) => _buildContent(
-            context, ref, null, visitAsync, favoritesAsync, myRankingAsync),
+            context, ref, null, visitAsync, visitCountAsync,
+            favoritesAsync, myRankingAsync, plansAsync),
       ),
     );
   }
@@ -56,10 +63,15 @@ class ProfileScreen extends ConsumerWidget {
     WidgetRef ref,
     app.User? user,
     AsyncValue<List<Visit>> visitAsync,
+    AsyncValue<int> visitCountAsync,
     AsyncValue<Set<String>> favoritesAsync,
     AsyncValue<RankedUser?> myRankingAsync,
+    AsyncValue<List<OnsenPlan>> plansAsync,
   ) {
-    final visitCount = visitAsync.valueOrNull?.length ?? 0;
+    // 正確な総件数（COUNT クエリ）。取得中は visitList の length をフォールバックに使う
+    final visitCount = visitCountAsync.valueOrNull
+        ?? visitAsync.valueOrNull?.length
+        ?? 0;
     final favoriteCount = favoritesAsync.valueOrNull?.length ?? 0;
     final recentVisits = visitAsync.valueOrNull?.take(5).toList() ?? [];
 
@@ -107,13 +119,18 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: 16),
 
         // ── Stats cards ────────────────────────────────────────────────
+        // UX-V7-1対応: 訪問数カードをタップすると全訪問履歴画面へ遷移する
         Row(
           children: [
             Expanded(
               child: _StatCard(
                 icon: Icons.place_outlined,
                 label: '訪問数',
-                value: visitAsync.isLoading ? '…' : '$visitCount',
+                value: visitCountAsync.isLoading ? '…' : '$visitCount',
+                onTap: visitCount > 0
+                    ? () => Navigator.of(context)
+                        .pushNamed('/visit-history')
+                    : null,
               ),
             ),
             const SizedBox(width: 12),
@@ -122,19 +139,53 @@ class ProfileScreen extends ConsumerWidget {
                 icon: Icons.favorite_outline,
                 label: 'お気に入り',
                 value: favoritesAsync.isLoading ? '…' : '$favoriteCount',
+                // UX-V8-2: お気に入り数カードをタップするとお気に入り画面へ遷移
+                onTap: favoriteCount > 0
+                    ? () => Navigator.of(context).pushNamed('/favorites')
+                    : null,
               ),
             ),
           ],
         ),
+        const SizedBox(height: 12),
+
+        // ── バッジ・ランキングへのリンク（G-1改善：stat cards直下に移動して発見性向上）──
+        // 以前は最近の訪問リストより下にあったが、スクロールしないと見えなかったため
+        // stat cards の直下（=スクロールゼロで見える位置）に引き上げた。
+        const _GamificationCards(),
+
         const SizedBox(height: 24),
 
         // ── Recent visits ──────────────────────────────────────────────
-        Text(
-          '最近の訪問',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '最近の訪問',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            // UX-V7-1対応: 5件を超える訪問がある場合に「すべて見る →」を表示
+            if (visitCount > 5)
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(context).pushNamed('/visit-history'),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  'すべて見る →',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         if (visitAsync.isLoading)
@@ -158,29 +209,14 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ),
 
-        // ── バッジ・ランキングへのリンク ───────────────────────────────
+        // ── 湯めぐりプランへのリンク ────────────────────────────────────
         const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Text('🏅', style: TextStyle(fontSize: 16)),
-                label: const Text('バッジ'),
-                onPressed: () =>
-                    Navigator.of(context).pushNamed('/badges'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.leaderboard_outlined),
-                label: const Text('ランキング'),
-                onPressed: () =>
-                    Navigator.of(context).pushNamed('/ranking'),
-              ),
-            ),
-          ],
-        ),
+        _PlansLinkCard(plansAsync: plansAsync),
+
+        // ── みんなの投稿（フィード）へのリンク ─────────────────────────
+        // G-1対応: フィードがボトムナビから消えたため、プロフィールから1タップで開ける。
+        const SizedBox(height: 12),
+        const _FeedLinkCard(),
 
         // ── Edit profile / Settings links ──────────────────────────────
         const SizedBox(height: 12),
@@ -239,15 +275,19 @@ class _StatCard extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   final IconData icon;
   final String label;
   final String value;
 
+  /// タップ時のコールバック。null の場合はタップ不可（インジケーターなし）。
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final card = Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
         child: Column(
@@ -262,13 +302,86 @@ class _StatCard extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF757575),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF757575),
+                      ),
+                ),
+                // タップ可能なカードには矢印アイコンを表示して遷移できることを示す
+                if (onTap != null) ...[
+                  const SizedBox(width: 2),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 14,
+                    color: Color(0xFF757575),
                   ),
+                ],
+              ],
             ),
           ],
+        ),
+      ),
+    );
+
+    // onTap が指定されている場合は InkWell でラップしてタップ可能にする
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: card,
+      );
+    }
+    return card;
+  }
+}
+
+// ── Plans link card ───────────────────────────────────────────────────────────
+// UX-V8-1: プラン一覧へのリンクカード。プラン数を表示し、タップで /plans へ遷移する。
+
+class _PlansLinkCard extends StatelessWidget {
+  const _PlansLinkCard({required this.plansAsync});
+
+  final AsyncValue<List<OnsenPlan>> plansAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    final planCount = plansAsync.valueOrNull?.length ?? 0;
+    final isLoading = plansAsync.isLoading;
+
+    return Card(
+      child: InkWell(
+        onTap: () => Navigator.of(context).pushNamed('/plans'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.route_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '湯めぐりプラン',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                isLoading ? '…' : '$planCount 件',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            ],
+          ),
         ),
       ),
     );
@@ -276,18 +389,19 @@ class _StatCard extends StatelessWidget {
 }
 
 // ── Visit row ─────────────────────────────────────────────────────────────────
+// N+1を避けるため ConsumerWidget をやめて StatelessWidget に変更。
+// 施設名は visitListProvider が JOIN で一括取得した visit.facilityName を使う。
 
-class _VisitRow extends ConsumerWidget {
+class _VisitRow extends StatelessWidget {
   const _VisitRow({required this.visit, required this.dateFormat});
 
   final Visit visit;
   final DateFormat dateFormat;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final facilityAsync = ref.watch(facilityDetailProvider(visit.facilityId));
-    final facilityName =
-        facilityAsync.valueOrNull?.name ?? visit.facilityId;
+  Widget build(BuildContext context) {
+    // facilityName が null の場合は facilityId をフォールバック表示する。
+    final facilityName = visit.facilityName ?? visit.facilityId;
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -302,6 +416,197 @@ class _VisitRow extends ConsumerWidget {
       onTap: () => Navigator.of(context).pushNamed(
         '/facility',
         arguments: visit.facilityId,
+      ),
+    );
+  }
+}
+
+// ── ゲーミフィケーションカード（G-1改善）──────────────────────────────────────
+
+/// バッジ・ランキングへのクイックアクセスカード。
+///
+/// G-1対応: 以前の小さなOutlinedButtonから、獲得バッジ数とランク情報を
+/// 表示する目立つカード形式に変更した。ユーザーの現在の状態を可視化して
+/// 「もっと集めたい」モチベーションを高める。
+class _GamificationCards extends ConsumerWidget {
+  const _GamificationCards();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final myBadgesAsync = ref.watch(myBadgesProvider);
+    final myRankingAsync = ref.watch(myRankingProvider);
+
+    final badgeCount = myBadgesAsync.valueOrNull?.length ?? 0;
+    final ranking = myRankingAsync.valueOrNull?.ranking;
+
+    return Row(
+      children: [
+        // ── バッジカード ──────────────────────────────────────────
+        Expanded(
+          child: _GamificationCard(
+            onTap: () => Navigator.of(context).pushNamed('/badges'),
+            backgroundColor: const Color(0xFFFFF8E1),
+            borderColor: const Color(0xFFFFD54F),
+            icon: const Text('🏅', style: TextStyle(fontSize: 28)),
+            title: 'バッジ',
+            subtitle: myBadgesAsync.isLoading
+                ? '読込中...'
+                : badgeCount > 0
+                    ? '$badgeCount 枚獲得！'
+                    : 'まだ獲得なし',
+            isDark: Theme.of(context).brightness == Brightness.dark,
+          ),
+        ),
+        const SizedBox(width: 12),
+        // ── ランキングカード ──────────────────────────────────────
+        Expanded(
+          child: _GamificationCard(
+            onTap: () => Navigator.of(context).pushNamed('/ranking'),
+            backgroundColor: const Color(0xFFE3F2FD),
+            borderColor: const Color(0xFF90CAF9),
+            icon: const Icon(Icons.leaderboard, size: 28, color: Color(0xFF1565C0)),
+            title: 'ランキング',
+            subtitle: myRankingAsync.isLoading
+                ? '読込中...'
+                : ranking != null
+                    ? (ranking.rankPosition != null
+                        ? '${ranking.rankPosition}位'
+                        : ranking.currentTitle)
+                    : '記録なし',
+            isDark: Theme.of(context).brightness == Brightness.dark,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── フィードリンクカード ───────────────────────────────────────────────────────
+/// G-1対応: フィードがボトムナビから外れたため、プロフィール画面からのアクセス導線。
+/// _PlansLinkCard と同じスタイルで統一する。
+class _FeedLinkCard extends StatelessWidget {
+  const _FeedLinkCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        onTap: () => Navigator.of(context).pushNamed('/feed'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.dynamic_feed_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'みんなの投稿',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      '湯めぐり仲間の最新投稿をチェック',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GamificationCard extends StatelessWidget {
+  const _GamificationCard({
+    required this.onTap,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isDark,
+  });
+
+  final VoidCallback onTap;
+  final Color backgroundColor;
+  final Color borderColor;
+  final Widget icon;
+  final String title;
+  final String subtitle;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    // ダークモード時はコンテナ色を調整
+    final bgColor = isDark
+        ? Theme.of(context).colorScheme.surfaceContainerHighest
+        : backgroundColor;
+    final bdColor = isDark
+        ? Theme.of(context).colorScheme.outline
+        : borderColor;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: bdColor, width: 1.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            icon,
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? Theme.of(context).colorScheme.onSurface.withAlpha(178) // 0.7 * 255 ≈ 178
+                    : const Color(0xFF757575),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  '詳細 →',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/features/favorites/favorites_screen.dart';
-import 'package:yu_map/features/feed/screens/feed_screen.dart';
 import 'package:yu_map/features/map/screens/map_screen.dart';
 import 'package:yu_map/features/profile/screens/profile_screen.dart';
+import 'package:yu_map/features/ranking/screens/ranking_screen.dart';
 import 'package:yu_map/features/search/screens/search_screen.dart';
+import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
 
 /// Root shell for signed-in users.
@@ -12,9 +13,11 @@ import 'package:yu_map/providers/favorites_provider.dart';
 /// Manages 5 tabs with [IndexedStack] so each tab retains its state across
 /// switches. Favorites are loaded eagerly on first mount.
 ///
+/// **タブ構成（G-1対応）**: 地図 / 検索 / ランキング / お気に入り / プロフィール
+/// - ランキング（ゲーミフィケーション）をフィードより優先して2タップ不要で到達できるようにした。
+/// - フィードは プロフィール画面 → 「みんなの投稿」カード から1タップで開ける。
+///
 /// **遅延ロード方式**: タブを初めて訪問したときにのみ画面を生成する。
-/// これにより MapScreen（Google Maps SDK）が起動直後にビルドされず、
-/// Maps SDK の APIキー検証クラッシュをタップ時まで遅延できる。
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -33,6 +36,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   final Set<int> _visitedIndices = {0};
 
   /// タブ番号に対応する画面ウィジェットを返す。
+  ///
+  /// タブ構成: 0=地図 / 1=検索 / 2=ランキング / 3=お気に入り / 4=プロフィール
   Widget _buildScreen(int index) {
     switch (index) {
       case 0:
@@ -40,7 +45,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 1:
         return const SearchScreen();
       case 2:
-        return const FeedScreen();
+        // G-1対応: ランキングをフィードの代わりにボトムナビに昇格。
+        // フィードは /feed ルートまたはプロフィール画面からアクセス可能。
+        return const RankingScreen();
       case 3:
         return const FavoritesScreen();
       case 4:
@@ -72,41 +79,106 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           return _buildScreen(index);
         }),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() {
-          _visitedIndices.add(index); // 訪問済みとしてマーク
-          _currentIndex = index;
-        }),
-        // 5タブ以上は type を fixed にしないとラベルが消える
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map_outlined),
-            activeIcon: Icon(Icons.map),
-            label: '地図',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: '検索',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dynamic_feed_outlined),
-            activeIcon: Icon(Icons.dynamic_feed),
-            label: 'フィード',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_border),
-            activeIcon: Icon(Icons.favorite),
-            label: 'お気に入り',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'プロフィール',
-          ),
-        ],
+      bottomNavigationBar: Consumer(
+        builder: (context, ref, _) {
+          final isGuestMode = ref.watch(guestModeProvider);
+          return BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) => setState(() {
+              _visitedIndices.add(index); // 訪問済みとしてマーク
+              _currentIndex = index;
+            }),
+            // 5タブ以上は type を fixed にしないとラベルが消える
+            type: BottomNavigationBarType.fixed,
+            items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.map_outlined),
+                activeIcon: Icon(Icons.map),
+                label: '地図',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.search),
+                label: '検索',
+              ),
+              // G-1対応: ランキングをフィードの代わりにタブに昇格。
+              // ゲーミフィケーション機能を1タップで到達できる位置に置く。
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.leaderboard_outlined),
+                activeIcon: Icon(Icons.leaderboard),
+                label: 'ランキング',
+              ),
+              // UX-V7-6対応: ゲストモード時はロックバッジを表示して利用制限を事前に示す
+              BottomNavigationBarItem(
+                icon: _GuestLockIcon(
+                  icon: Icons.favorite_border,
+                  isLocked: isGuestMode,
+                ),
+                activeIcon: _GuestLockIcon(
+                  icon: Icons.favorite,
+                  isLocked: isGuestMode,
+                ),
+                label: 'お気に入り',
+              ),
+              BottomNavigationBarItem(
+                icon: _GuestLockIcon(
+                  icon: Icons.person_outline,
+                  isLocked: isGuestMode,
+                ),
+                activeIcon: _GuestLockIcon(
+                  icon: Icons.person,
+                  isLocked: isGuestMode,
+                ),
+                label: 'プロフィール',
+              ),
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+// ── ゲストモード用ロックバッジアイコン ──────────────────────────────────────────
+
+/// ゲストモード時にアイコン右上に小さなロックアイコンを重ねて表示する。
+/// [isLocked] が false の場合は通常アイコンをそのまま返す。
+class _GuestLockIcon extends StatelessWidget {
+  const _GuestLockIcon({
+    required this.icon,
+    required this.isLocked,
+  });
+
+  final IconData icon;
+  final bool isLocked;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isLocked) {
+      return Icon(icon);
+    }
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        // 右上の小さなロックアイコン（ゲスト制限インジケーター）
+        Positioned(
+          right: -4,
+          top: -4,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.grey[500],
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.lock,
+              size: 8,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

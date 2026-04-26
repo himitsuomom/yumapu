@@ -86,6 +86,45 @@ class CommentNotifier extends StateNotifier<AsyncValue<List<Comment>>> {
     // コメントリストを再取得
     await load();
   }
+
+  /// 自分のコメントを削除する
+  ///
+  /// RLS により自分のコメント（user_id = auth.uid()）しか削除できない。
+  /// 楽観的UIで即時リストから除いてから DB 削除を実行する。
+  Future<void> deleteComment(String commentId) async {
+    final client = _ref.read(supabaseClientProvider);
+    final session = _ref.read(sessionProvider);
+    if (client == null || session == null) return;
+
+    // 楽観的UI: 先にローカルリストからコメントを除く
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(current.where((c) => c.id != commentId).toList());
+    }
+
+    try {
+      await client
+          .from('comments')
+          .delete()
+          .eq('id', commentId)
+          .eq('user_id', session.user.id);
+
+      // フィードの commentsCount を楽観的UI更新で即時反映
+      final feedNotifier = _ref.read(postFeedProvider.notifier);
+      final feedState = _ref.read(postFeedProvider).valueOrNull;
+      if (feedState != null) {
+        final updated = feedState.map((p) {
+          if (p.id != _postId) return p;
+          final newCount = (p.commentsCount - 1).clamp(0, p.commentsCount);
+          return p.copyWith(commentsCount: newCount);
+        }).toList();
+        feedNotifier.updateState(updated);
+      }
+    } catch (_) {
+      // 削除失敗時はリストを再読み込みして整合性を保つ
+      await load();
+    }
+  }
 }
 
 /// コメントプロバイダー（postId ごとに独立したインスタンス）

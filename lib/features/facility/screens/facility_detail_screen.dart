@@ -1,6 +1,3 @@
-import 'dart:math' as math;
-
-import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -16,7 +13,6 @@ import 'package:yu_map/features/facility/screens/owner_facility_edit_screen.dart
 import 'package:yu_map/features/facility/screens/owner_registration_screen.dart';
 import 'package:yu_map/features/facility/widgets/review_card.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
-import 'package:yu_map/models/badge.dart';
 import 'package:yu_map/models/onsen_plan.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/facility_provider.dart';
@@ -25,6 +21,7 @@ import 'package:yu_map/providers/plan_provider.dart';
 import 'package:yu_map/providers/review_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
 import 'package:yu_map/services/analytics_service.dart';
+import 'package:yu_map/services/checkin_service.dart';
 
 class FacilityDetailScreen extends ConsumerStatefulWidget {
   const FacilityDetailScreen({super.key, required this.facilityId});
@@ -38,6 +35,19 @@ class FacilityDetailScreen extends ConsumerStatefulWidget {
 
 class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   bool _analyticsLogged = false;
+
+  /// チェックイン処理中フラグ（ボタン二重タップ防止）
+  bool _isCheckingIn = false;
+
+  /// UX-V11-3: ヘッダー写真カルーセル用コントローラーと現在ページインデックス
+  final PageController _headerPageController = PageController();
+  int _headerPhotoIndex = 0;
+
+  @override
+  void dispose() {
+    _headerPageController.dispose();
+    super.dispose();
+  }
 
   // ── URL helpers ───────────────────────────────────────────────────────────
 
@@ -66,86 +76,18 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   }
 
   // ── Check-in dialog ───────────────────────────────────────────────────────
+  // ロジックは lib/services/checkin_service.dart の CheckinService に共通化。
 
   Future<void> _showCheckinDialog(Facility facility) async {
-    final confirmed = await showDialog<bool>(
+    if (_isCheckingIn) return;
+    await CheckinService.performCheckin(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('チェックイン'),
-        content: Text('${facility.name}にチェックインしますか？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('チェックイン'),
-          ),
-        ],
-      ),
+      ref: ref,
+      facility: facility,
+      setCheckingIn: (v) {
+        if (mounted) setState(() => _isCheckingIn = v);
+      },
     );
-    if (confirmed != true || !mounted) return;
-
-    // チェックイン直前の時刻を記録（バッジ付与検出のため）
-    final checkinTime = DateTime.now().toUtc();
-
-    await ref
-        .read(visitNotifierProvider.notifier)
-        .logVisit(facilityId: facility.id);
-    if (!mounted) return;
-
-    final visitState = ref.read(visitNotifierProvider);
-    if (visitState is AsyncError) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(visitState.error.toString()),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('チェックインしました 🎉')),
-    );
-
-    // DBトリガーがバッジを付与するまで少し待つ
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-
-    // チェックイン後に新規付与されたバッジを取得して通知する
-    await _notifyNewBadges(checkinTime);
-  }
-
-  /// チェックイン時刻以降に付与されたバッジを取得してダイアログ表示する
-  Future<void> _notifyNewBadges(DateTime since) async {
-    final client = ref.read(supabaseClientProvider);
-    final userId = ref.read(sessionProvider)?.user.id;
-    if (client == null || userId == null || !mounted) return;
-
-    try {
-      final rows = await client
-          .from('user_badges')
-          .select('*, badges(*)')
-          .eq('user_id', userId)
-          .gte('earned_at', since.toIso8601String());
-
-      if (!mounted) return;
-      final newBadges = (rows as List)
-          .map((e) => UserBadge.fromJson(e as Map<String, dynamic>))
-          .toList();
-
-      if (newBadges.isEmpty) return;
-
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => _BadgeCelebrationDialog(badges: newBadges),
-      );
-    } catch (_) {
-      // バッジ取得失敗は無視（チェックイン自体は成功している）
-    }
   }
 
   // ── Report / Owner navigation ─────────────────────────────────────────────
@@ -211,7 +153,8 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
         facilityId: facility.id,
         onSubmitted: () {
           ref.invalidate(reviewListProvider(facility.id));
-          ref.invalidate(reviewCountProvider(facility.id));
+          // 統合プロバイダーを invalidate してカウント・平均を再取得
+          ref.invalidate(facilityReviewSummaryProvider(facility.id));
         },
       ),
     );
@@ -266,11 +209,19 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
     final isSignedIn = ref.watch(isSignedInProvider);
     final isFavorite = ref.watch(isFavoriteProvider(facility.id));
     final reviewAsync = ref.watch(reviewListProvider(facility.id));
+    // UX-V8-9: ログイン中のみいいね済みIDを取得してトグル表示に使う
+    final likedIds = isSignedIn
+        ? ref.watch(likedReviewIdsProvider(facility.id)).valueOrNull ?? {}
+        : <String>{};
+    // レビュー削除: 現在ログイン中のユーザーIDを取得（自分のレビューのみ削除可）
+    final currentUserId = ref.watch(sessionProvider)?.user.id;
 
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // ── Map header ─────────────────────────────────────────────────
+          // ── Photo carousel / Map header ────────────────────────────────
+          // UX-V11-3: 写真がある場合はカルーセル、ない場合は地図を表示する。
+          // facilityPhotosProvider は FacilityPreviewSheet と共有の共通プロバイダー。
           SliverAppBar(
             expandedHeight: 250,
             pinned: true,
@@ -286,15 +237,114 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              background: facility.hasValidLocation
-                  // OpenStreetMap タイル（APIキー不要・完全無料）
-                  ? FlutterMap(
+              background: Builder(
+                builder: (context) {
+                  final photos = ref
+                          .watch(facilityPhotosProvider(facility.id))
+                          .valueOrNull ??
+                      [];
+
+                  if (photos.isNotEmpty) {
+                    // 写真カルーセル（PageView）
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        PageView.builder(
+                          controller: _headerPageController,
+                          itemCount: photos.length,
+                          onPageChanged: (i) =>
+                              setState(() => _headerPhotoIndex = i),
+                          itemBuilder: (_, i) => Image.network(
+                            photos[i],
+                            fit: BoxFit.cover,
+                            // ネットワークエラー時はプレースホルダーを表示
+                            errorBuilder: (_, __, ___) => ColoredBox(
+                              color: Colors.grey.shade200,
+                              child: const Center(
+                                child: Icon(Icons.image_not_supported,
+                                    size: 48, color: Colors.grey),
+                              ),
+                            ),
+                            loadingBuilder: (_, child, progress) =>
+                                progress == null
+                                    ? child
+                                    : ColoredBox(
+                                        color: Colors.grey.shade100,
+                                        child: const Center(
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        ),
+                                      ),
+                          ),
+                        ),
+                        // 複数枚の場合のみページインジケーターを表示
+                        if (photos.length > 1)
+                          Positioned(
+                            bottom: 12,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(
+                                photos.length,
+                                (i) => AnimatedContainer(
+                                  duration:
+                                      const Duration(milliseconds: 200),
+                                  width: _headerPhotoIndex == i ? 16 : 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 2),
+                                  decoration: BoxDecoration(
+                                    color: _headerPhotoIndex == i
+                                        ? Colors.white
+                                        : Colors.white54,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        // 写真枚数バッジ（右上）
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.photo_library_outlined,
+                                    size: 12, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_headerPhotoIndex + 1}/${photos.length}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  // 写真なし: 従来の地図表示にフォールバック
+                  if (facility.hasValidLocation) {
+                    return FlutterMap(
                       options: MapOptions(
                         initialCenter: ll.LatLng(
                             facility.latitude, facility.longitude),
                         initialZoom: AppConstants.detailZoom,
                         interactionOptions: const InteractionOptions(
-                          // ヘッダー画像として使うため操作を無効化
                           flags: InteractiveFlag.none,
                         ),
                       ),
@@ -327,14 +377,18 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                           ],
                         ),
                       ],
-                    )
-                  : ColoredBox(
-                      color: Colors.grey.shade200,
-                      child: const Center(
-                        child: Icon(Icons.map_outlined,
-                            size: 80, color: Colors.grey),
-                      ),
+                    );
+                  }
+
+                  return ColoredBox(
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: Icon(Icons.map_outlined,
+                          size: 80, color: Colors.grey),
                     ),
+                  );
+                },
+              ),
             ),
             actions: [
               // Favorite button — login only
@@ -349,6 +403,11 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                       ref.read(favoritesProvider.notifier).toggle(facility.id),
                 ),
             ],
+          ),
+
+          // ── UX-V13-2: 平均評価サマリー（施設名直下に大きく表示）────────
+          SliverToBoxAdapter(
+            child: _RatingSummaryBar(facilityId: facility.id),
           ),
 
           // ── Facility info ──────────────────────────────────────────────
@@ -377,9 +436,19 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            icon: const Icon(Icons.check_circle_outline),
+                            icon: _isCheckingIn
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.check_circle_outline),
                             label: const Text('チェックイン'),
-                            onPressed: () => _showCheckinDialog(facility),
+                            // 処理中は null を渡してボタンを無効化する
+                            onPressed: _isCheckingIn
+                                ? null
+                                : () => _showCheckinDialog(facility),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -511,14 +580,50 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
               }
               return SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) => ReviewCard(
-                    review: reviews[i],
-                    onLike: isSignedIn
-                        ? () => ref
-                            .read(reviewNotifierProvider.notifier)
-                            .likeReview(reviews[i].id)
-                        : null,
-                  ),
+                  (_, i) {
+                    final reviewId = reviews[i].id;
+                    final alreadyLiked = likedIds.contains(reviewId);
+                    // 自分のレビューかどうかを確認して削除ボタンを表示する
+                    final isOwner = currentUserId != null &&
+                        reviews[i].userId == currentUserId;
+                    return ReviewCard(
+                      review: reviews[i],
+                      isLiked: alreadyLiked,
+                      onLike: isSignedIn && !alreadyLiked
+                          ? () async {
+                              await ref
+                                  .read(reviewNotifierProvider.notifier)
+                                  .likeReview(reviewId);
+                              // いいね後にプロバイダーを再取得してUIを更新する
+                              ref.invalidate(
+                                  likedReviewIdsProvider(facility.id));
+                              ref.invalidate(reviewListProvider(facility.id));
+                            }
+                          : null,
+                      onUnlike: isSignedIn && alreadyLiked
+                          ? () async {
+                              await ref
+                                  .read(reviewNotifierProvider.notifier)
+                                  .unlikeReview(reviewId);
+                              ref.invalidate(
+                                  likedReviewIdsProvider(facility.id));
+                              ref.invalidate(reviewListProvider(facility.id));
+                            }
+                          : null,
+                      // 自分のレビューのみ削除ボタンを表示する
+                      onDelete: isOwner
+                          ? () async {
+                              await ref
+                                  .read(reviewNotifierProvider.notifier)
+                                  .deleteReview(reviewId);
+                              // 削除後にレビュー一覧と集計を再取得する
+                              ref.invalidate(reviewListProvider(facility.id));
+                              ref.invalidate(
+                                  facilityReviewSummaryProvider(facility.id));
+                            }
+                          : null,
+                    );
+                  },
                   childCount: reviews.length,
                 ),
               );
@@ -556,6 +661,105 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       ),
     );
   }
+}
+
+// ── Rating summary bar ────────────────────────────────────────────────────────
+
+/// UX-V13-2: 施設名直下に平均評価スコアと件数を大きく表示するウィジェット。
+///
+/// facilityReviewSummaryProvider でサーバーサイドAVGを取得し、
+/// ★評価を横並びで見やすく表示する。0件の場合は非表示。
+class _RatingSummaryBar extends ConsumerWidget {
+  const _RatingSummaryBar({required this.facilityId});
+
+  final String facilityId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summaryAsync = ref.watch(facilityReviewSummaryProvider(facilityId));
+
+    return summaryAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (summary) {
+        if (summary.count == 0) return const SizedBox.shrink();
+
+        final avg = summary.avgRating;
+        final count = summary.count;
+
+        return Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.shade200),
+            ),
+          ),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              // 星アイコン（塗りつぶし）
+              const Icon(Icons.star, color: Color(0xFFFFC107), size: 22),
+              const SizedBox(width: 6),
+              // 平均スコア（大きめのテキスト）
+              Text(
+                avg.toStringAsFixed(1),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFFFFC107),
+                    ),
+              ),
+              const SizedBox(width: 8),
+              // 星を5個並べる（半星対応）
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(5, (i) {
+                  final filled = avg - i;
+                  if (filled >= 1) {
+                    return const Icon(Icons.star,
+                        color: Color(0xFFFFC107), size: 16);
+                  } else if (filled >= 0.5) {
+                    return const Icon(Icons.star_half,
+                        color: Color(0xFFFFC107), size: 16);
+                  } else {
+                    return const Icon(Icons.star_border,
+                        color: Color(0xFFFFC107), size: 16);
+                  }
+                }),
+              ),
+              const SizedBox(width: 8),
+              // 件数テキスト
+              Text(
+                '($count件)',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── showAddToPlanSheet (public helper) ───────────────────────────────────────
+
+/// UX-V13-5: お気に入り画面など外部から「プランに追加」シートを呼び出す公開ヘルパー。
+///
+/// _AddToPlanSheet はこのファイル内のプライベートクラスなので、
+/// 他の画面はこの関数を通じてシートを表示する。
+Future<void> showAddToPlanSheet(
+    BuildContext context, Facility facility) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (_) => _AddToPlanSheet(facility: facility),
+  );
 }
 
 // ── Facility info section ─────────────────────────────────────────────────────
@@ -771,168 +975,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ── Badge celebration dialog ──────────────────────────────────────────────────
-
-/// バッジ獲得を祝うダイアログ。上からconfettiが降ってくる演出付き。
-class _BadgeCelebrationDialog extends StatefulWidget {
-  const _BadgeCelebrationDialog({required this.badges});
-
-  final List<UserBadge> badges;
-
-  @override
-  State<_BadgeCelebrationDialog> createState() =>
-      _BadgeCelebrationDialogState();
-}
-
-class _BadgeCelebrationDialogState extends State<_BadgeCelebrationDialog> {
-  late final ConfettiController _confettiController;
-
-  @override
-  void initState() {
-    super.initState();
-    _confettiController =
-        ConfettiController(duration: const Duration(seconds: 3));
-    // ダイアログが開いたらすぐ confetti を開始
-    _confettiController.play();
-  }
-
-  @override
-  void dispose() {
-    _confettiController.dispose();
-    super.dispose();
-  }
-
-  /// confetti の紙片を描く（星型）
-  Path _drawStar(Size size) {
-    final path = Path();
-    const sides = 5;
-    const innerRadiusRatio = 0.4;
-    final outerR = size.width / 2;
-    final innerR = outerR * innerRadiusRatio;
-    final center = Offset(outerR, size.height / 2);
-
-    for (int i = 0; i < sides * 2; i++) {
-      final angle = (math.pi / sides) * i - math.pi / 2;
-      final r = i.isEven ? outerR : innerR;
-      final point = Offset(
-        center.dx + r * math.cos(angle),
-        center.dy + r * math.sin(angle),
-      );
-      if (i == 0) {
-        path.moveTo(point.dx, point.dy);
-      } else {
-        path.lineTo(point.dx, point.dy);
-      }
-    }
-    path.close();
-    return path;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Stack は showDialog のオーバーレイ全体を覆うため SizedBox.expand で明示
-    // confetti は上端中央から降り注ぐ。AlertDialog は中央に Align で固定。
-    return SizedBox.expand(
-      child: Stack(
-        children: [
-          // ── confetti（画面上端中央から下方向に発射）──────────────
-          Align(
-            alignment: Alignment.topCenter,
-            child: ConfettiWidget(
-              confettiController: _confettiController,
-              blastDirection: math.pi / 2, // 下方向
-              numberOfParticles: 30,
-              maxBlastForce: 30,
-              minBlastForce: 10,
-              emissionFrequency: 0.05,
-              gravity: 0.3,
-              colors: const [
-                Color(0xFFFF6B6B),
-                Color(0xFFFFD93D),
-                Color(0xFF6BCB77),
-                Color(0xFF4D96FF),
-                Color(0xFFFF9F43),
-              ],
-              createParticlePath: _drawStar,
-            ),
-          ),
-
-          // ── ダイアログ本体（画面中央）────────────────────────────
-          Center(
-            child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Column(
-            children: [
-              Text(
-                '🏅',
-                style: TextStyle(fontSize: 48),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 8),
-              Text(
-                'バッジを獲得しました！',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: widget.badges
-                  .map(
-                    (ub) => ListTile(
-                      leading: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primaryContainer,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          ub.badge.displayIcon,
-                          style: const TextStyle(fontSize: 24),
-                        ),
-                      ),
-                      title: Text(
-                        ub.badge.nameJa,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: ub.badge.descriptionJa != null
-                          ? Text(
-                              ub.badge.descriptionJa!,
-                              style: const TextStyle(fontSize: 12),
-                            )
-                          : null,
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-              actionsAlignment: MainAxisAlignment.center,
-              actions: [
-                FilledButton.icon(
-                  icon: const Icon(Icons.celebration_outlined),
-                  label: const Text('やった！'),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── Add to plan bottom sheet ──────────────────────────────────────────────────
 
 /// 湯めぐりプランに施設を追加するボトムシート。
@@ -1023,8 +1065,8 @@ class _AddToPlanSheetState extends ConsumerState<_AddToPlanSheet> {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 既存プラン一覧（最大5件）
-                  ...plans.take(5).map((plan) {
+                  // UX-4修正: .take(5) を削除して全件表示（スクロール対応）
+                  ...plans.map((plan) {
                     final alreadyAdded =
                         plan.containsFacility(widget.facility.id);
                     return ListTile(

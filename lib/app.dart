@@ -1,23 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/theme/app_theme.dart';
 import 'package:yu_map/core/widgets/offline_banner.dart';
+import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/domain/entities/user.dart' as app;
 import 'package:yu_map/features/auth/screens/login_screen.dart';
+import 'package:yu_map/features/auth/screens/onboarding_screen.dart';
 import 'package:yu_map/features/auth/screens/register_screen.dart';
+import 'package:yu_map/features/feed/screens/feed_screen.dart';
 import 'package:yu_map/features/facility/screens/facility_detail_screen.dart';
+import 'package:yu_map/features/admin/screens/admin_owner_requests_screen.dart';
+import 'package:yu_map/features/facility/screens/facility_report_screen.dart';
+import 'package:yu_map/features/facility/screens/owner_facility_edit_screen.dart';
+import 'package:yu_map/features/facility/screens/owner_registration_screen.dart';
 import 'package:yu_map/features/home/home_shell.dart';
 import 'package:yu_map/features/profile/screens/badge_screen.dart';
 import 'package:yu_map/features/profile/screens/edit_profile_screen.dart';
 import 'package:yu_map/features/profile/screens/profile_screen.dart';
+import 'package:yu_map/features/favorites/favorites_screen.dart';
+import 'package:yu_map/features/profile/screens/plan_detail_screen.dart';
+import 'package:yu_map/features/profile/screens/plans_screen.dart';
+import 'package:yu_map/features/profile/screens/visit_history_screen.dart';
+import 'package:yu_map/models/onsen_plan.dart';
 import 'package:yu_map/features/ranking/screens/ranking_screen.dart';
-import 'package:yu_map/features/reviews/screens/write_review_screen.dart';
 import 'package:yu_map/features/inquiry/inquiry_screen.dart';
 import 'package:yu_map/features/settings/legal_screen.dart';
 import 'package:yu_map/features/settings/settings_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/connectivity_provider.dart';
+import 'package:yu_map/providers/theme_provider.dart';
 import 'package:yu_map/screens/subscription_screen.dart';
 
 class YuMapApp extends ConsumerWidget {
@@ -26,12 +39,14 @@ class YuMapApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOnline = ref.watch(connectivityProvider);
+    // D-2対応: ユーザーが選択したテーマモードを使用する（デフォルトはシステム追従）
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
       title: AppConstants.appName,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system, // OS の設定に従って自動切替
+      themeMode: themeMode, // D-2対応: themeModeProvider から取得
       debugShowCheckedModeBanner: false,
       // Named routes for screens pushed via Navigator.pushNamed.
       routes: {
@@ -42,6 +57,11 @@ class YuMapApp extends ConsumerWidget {
         '/settings': (_) => const SettingsScreen(),
         '/ranking': (_) => const RankingScreen(),
         '/badges': (_) => const BadgeScreen(),
+        '/visit-history': (_) => const VisitHistoryScreen(),
+        '/plans': (_) => const PlansScreen(),
+        '/favorites': (_) => const FavoritesScreen(),
+        // G-1対応: フィードはランキングタブ昇格に伴いルート直接アクセスに変更
+        '/feed': (_) => const FeedScreen(),
         '/privacy-policy': (_) => const PrivacyPolicyScreen(),
         '/terms': (_) => const TermsScreen(),
       },
@@ -63,13 +83,37 @@ class YuMapApp extends ConsumerWidget {
             return MaterialPageRoute<void>(
               builder: (_) => FacilityDetailScreen(facilityId: facilityId),
             );
-          case '/review':
-            final args = settings.arguments as Map<String, String>;
+          case '/facility-report':
+            final reportArgs = settings.arguments as Map<String, dynamic>;
             return MaterialPageRoute<void>(
-              builder: (_) => WriteReviewScreen(
-                facilityId: args['facilityId']!,
-                facilityName: args['facilityName']!,
+              builder: (_) => FacilityReportScreen(
+                facilityId: reportArgs['facilityId'] as String,
+                facilityName: reportArgs['facilityName'] as String,
               ),
+            );
+          case '/owner-registration':
+            final ownerArgs = settings.arguments as Map<String, dynamic>;
+            return MaterialPageRoute<void>(
+              builder: (_) => OwnerRegistrationScreen(
+                facilityId: ownerArgs['facilityId'] as String,
+                facilityName: ownerArgs['facilityName'] as String,
+              ),
+            );
+          case '/admin/owner-requests':
+            return MaterialPageRoute<void>(
+              builder: (_) => const AdminOwnerRequestsScreen(),
+            );
+          case '/owner/facility-edit':
+            final facility = settings.arguments as Facility;
+            return MaterialPageRoute<bool>(
+              builder: (_) => OwnerFacilityEditScreen(facility: facility),
+            );
+          // E-1修正: /review ルートは未使用（実際のレビュー投稿は ReviewBottomSheet 経由）
+          // WriteReviewScreen は削除対象のため、このルートも削除する
+          case '/plan-detail':
+            final plan = settings.arguments as OnsenPlan;
+            return MaterialPageRoute<void>(
+              builder: (_) => PlanDetailScreen(plan: plan),
             );
           case '/edit-profile':
             final user = settings.arguments as app.User;
@@ -96,6 +140,9 @@ class YuMapApp extends ConsumerWidget {
 
 /// Watches [isSignedInProvider] and shows either [HomeShell] or [LoginScreen].
 ///
+/// 初回起動時のみ [OnboardingScreen] を表示する（UX-V7-5対応）。
+/// flutter_secure_storage の 'onboarding_completed' フラグで判定する。
+///
 /// When the auth state changes (login / logout) any screens pushed on top of
 /// this gate are popped so the user always sees the correct root view.
 class _AuthGate extends ConsumerStatefulWidget {
@@ -106,13 +153,74 @@ class _AuthGate extends ConsumerStatefulWidget {
 }
 
 class _AuthGateState extends ConsumerState<_AuthGate> {
+  // null = 確認中, true = 完了済み, false = 未完了（初回起動）
+  bool? _onboardingCompleted;
+
+  static const _storage = FlutterSecureStorage();
+  static const _guestModeKey = 'guest_mode';
+
+  @override
+  void initState() {
+    super.initState();
+    _initStorage();
+  }
+
+  /// オンボーディング完了フラグとゲストモードフラグを並行して読み込む。
+  ///
+  /// Bug-V9-4対応: ゲストモードを flutter_secure_storage で永続化する。
+  /// アプリ再起動後も「ゲストとして閲覧」を選んだ状態を維持できる。
+  Future<void> _initStorage() async {
+    // 2つのストレージ読み込みを並行実行して待ち時間を最小化する
+    final results = await Future.wait<bool>([
+      isOnboardingCompleted(),
+      _storage.read(key: _guestModeKey).then((v) => v == 'true'),
+    ]);
+    if (!mounted) return;
+
+    final onboardingDone = results[0];
+    final guestMode = results[1];
+
+    // ゲストモードが保存されていればプロバイダーに反映する
+    if (guestMode) {
+      ref.read(guestModeProvider.notifier).state = true;
+    }
+    setState(() => _onboardingCompleted = onboardingDone);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Bug-V9-4対応: ゲストモードの変化をストレージに即時反映する。
+    // これにより次回起動時も同じモードで起動できる。
+    ref.listen<bool>(guestModeProvider, (_, value) {
+      if (value) {
+        _storage.write(key: _guestModeKey, value: 'true');
+      } else {
+        _storage.delete(key: _guestModeKey);
+      }
+    });
+
     ref.listen<bool>(isSignedInProvider, (previous, next) {
       if (previous != null && previous != next) {
         Navigator.of(context).popUntil((route) => route.isFirst);
+        // Bug-V6-2修正: ゲストモードからログインした場合にゲストフラグをクリアする。
+        // これにより isGuestMode が stale に残る状態不整合を防ぐ。
+        if (next) {
+          ref.read(guestModeProvider.notifier).state = false;
+        }
       }
     });
+
+    // フラグ確認中はスプラッシュ代わりに空白を表示
+    if (_onboardingCompleted == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // 初回起動 → オンボーディング画面へ
+    if (_onboardingCompleted == false) {
+      return const OnboardingScreen();
+    }
 
     final isSignedIn = ref.watch(isSignedInProvider);
     final isGuestMode = ref.watch(guestModeProvider);

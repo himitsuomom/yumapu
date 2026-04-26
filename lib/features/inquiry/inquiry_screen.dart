@@ -1,7 +1,7 @@
 // lib/features/inquiry/inquiry_screen.dart
 //
 // 問い合わせフォーム画面。
-// 「営業時間変更を報告」と「未登録施設を追加申請」の2種類に対応。
+// 「営業時間変更を報告」「未登録施設を追加申請」「バグ報告」「一般問い合わせ」に対応。
 // 送信先: Supabase の inquiries テーブル（誰でも送信可・ログイン不要）
 
 import 'package:flutter/material.dart';
@@ -12,6 +12,8 @@ import 'package:yu_map/providers/auth_provider.dart';
 enum InquiryType {
   hoursChange, // 営業時間・定休日の変更報告
   addFacility, // 未登録施設の追加申請
+  bugReport,   // バグ・不具合の報告（D-3対応）
+  general,     // 一般的なご意見・機能要望（D-3対応）
 }
 
 /// InquiryScreen — 施設詳細から呼び出す問い合わせフォーム
@@ -57,25 +59,75 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
 
   // ── 問い合わせ種別ごとの設定値 ──────────────────────────────────────────
 
-  String get _title => widget.type == InquiryType.hoursChange
-      ? '営業時間変更を報告'
-      : '未登録施設を追加申請';
+  String get _title {
+    switch (widget.type) {
+      case InquiryType.hoursChange:
+        return '営業時間変更を報告';
+      case InquiryType.addFacility:
+        return '未登録施設を追加申請';
+      case InquiryType.bugReport:
+        return 'バグを報告する';
+      case InquiryType.general:
+        return 'お問い合わせ';
+    }
+  }
 
-  String get _description => widget.type == InquiryType.hoursChange
-      ? '営業時間・定休日が変わっていることを教えてください。\n運営チームが確認して更新します。'
-      : '地図に載っていない銭湯・サウナ・温泉の情報を教えてください。\n審査のうえ追加します。';
+  String get _description {
+    switch (widget.type) {
+      case InquiryType.hoursChange:
+        return '営業時間・定休日が変わっていることを教えてください。\n運営チームが確認して更新します。';
+      case InquiryType.addFacility:
+        return '地図に載っていない銭湯・サウナ・温泉の情報を教えてください。\n審査のうえ追加します。';
+      case InquiryType.bugReport:
+        return '不具合・動作がおかしい場合にご報告ください。\nできるだけ再現手順を詳しく書いていただけると助かります。';
+      case InquiryType.general:
+        return '機能要望・ご意見・その他のお問い合わせをお気軽にお送りください。';
+    }
+  }
 
-  String get _facilityNameHint => widget.type == InquiryType.hoursChange
-      ? '例: 〇〇温泉'
-      : '例: △△銭湯（新規）';
+  String get _facilityNameHint {
+    switch (widget.type) {
+      case InquiryType.hoursChange:
+        return '例: 〇〇温泉';
+      case InquiryType.addFacility:
+        return '例: △△銭湯（新規）';
+      case InquiryType.bugReport:
+        return '（任意）どの画面で問題が発生しましたか？';
+      case InquiryType.general:
+        return '（任意）関連する施設や機能があればご記入ください';
+    }
+  }
 
-  String get _messageHint => widget.type == InquiryType.hoursChange
-      ? '変更内容（例: 月曜定休になった、朝10時〜22時になった）'
-      : '施設の住所・電話番号・営業時間など分かる範囲でご記入ください';
+  String get _messageHint {
+    switch (widget.type) {
+      case InquiryType.hoursChange:
+        return '変更内容（例: 月曜定休になった、朝10時〜22時になった）';
+      case InquiryType.addFacility:
+        return '施設の住所・電話番号・営業時間など分かる範囲でご記入ください';
+      case InquiryType.bugReport:
+        return 'どんな操作をしたか・何が起きたか・再現手順など詳しく教えてください';
+      case InquiryType.general:
+        return 'ご自由にご記入ください';
+    }
+  }
 
-  String get _typeValue => widget.type == InquiryType.hoursChange
-      ? 'hours_change'
-      : 'add_facility';
+  String get _typeValue {
+    switch (widget.type) {
+      case InquiryType.hoursChange:
+        return 'hours_change';
+      case InquiryType.addFacility:
+        return 'add_facility';
+      case InquiryType.bugReport:
+        return 'bug_report';
+      case InquiryType.general:
+        return 'general';
+    }
+  }
+
+  /// バグ報告・一般問い合わせは施設名が任意（必須バリデーションを外す）
+  bool get _isFacilityNameRequired =>
+      widget.type == InquiryType.hoursChange ||
+      widget.type == InquiryType.addFacility;
 
   // ── フォーム送信 ──────────────────────────────────────────────────────────
 
@@ -171,15 +223,23 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
               ),
               const SizedBox(height: 24),
 
-              // 施設名（必須）
-              _RequiredLabel(label: '施設名'),
+              // 施設名（必須 or 任意：種別による）
+              if (_isFacilityNameRequired)
+                _RequiredLabel(label: '施設名')
+              else
+                const Text(
+                  '関連する施設・機能（任意）',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _facilityNameCtrl,
                 textInputAction: TextInputAction.next,
                 decoration: _inputDecoration(_facilityNameHint),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '施設名を入力してください' : null,
+                validator: (v) => _isFacilityNameRequired &&
+                        (v == null || v.trim().isEmpty)
+                    ? '施設名を入力してください'
+                    : null,
               ),
               const SizedBox(height: 20),
 

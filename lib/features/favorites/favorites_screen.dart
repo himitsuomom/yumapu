@@ -18,6 +18,8 @@ import 'package:yu_map/core/widgets/empty_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/features/facility/screens/facility_detail_screen.dart'
+    show showAddToPlanSheet;
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
@@ -295,12 +297,43 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                           ),
                         );
                       },
-                      child: FacilityListTile(
-                        facility: facility,
-                        onTap: () => Navigator.of(context).pushNamed(
-                          '/facility',
-                          arguments: facility.id,
-                        ),
+                      // UX-V13-5: 施設タイルの右にプラン追加・その他メニューを配置
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: FacilityListTile(
+                              facility: facility,
+                              onTap: () => Navigator.of(context).pushNamed(
+                                '/facility',
+                                arguments: facility.id,
+                              ),
+                            ),
+                          ),
+                          // 「プランに追加」ポップアップメニュー
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert,
+                                color: Colors.grey, size: 20),
+                            tooltip: 'メニュー',
+                            onSelected: (value) {
+                              if (value == 'add_to_plan') {
+                                showAddToPlanSheet(context, facility);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                value: 'add_to_plan',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.playlist_add_outlined,
+                                        size: 18),
+                                    SizedBox(width: 8),
+                                    Text('プランに追加'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     );
                   },

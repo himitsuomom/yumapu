@@ -1,0 +1,35 @@
+# flutter_native_splash.yaml
+#
+# スプラッシュ画面の設定ファイル（A-1対応）
+# このファイルを変更したら以下のコマンドを実行してネイティブスプラッシュを再生成する:
+#   flutter pub run flutter_native_splash:create
+#
+# 参考: https://pub.dev/packages/flutter_native_splash
+
+flutter_native_splash:
+  # スプラッシュ画面の背景色（白）
+  color: "#FFFFFF"
+
+  # ダークモード時の背景色
+  color_dark: "#121212"
+
+  # 中央に表示するロゴ画像
+  image: assets/images/splash_logo.png
+
+  # ダークモード用の別ロゴ（同じ画像を使用）
+  image_dark: assets/images/splash_logo.png
+
+  # ロゴのサイズ（スクリーン幅に対する割合・iOS用）
+  # android_gravity: center がデフォルト
+  android_12:
+    # Android 12+ 専用設定
+    image: assets/images/splash_logo.png
+    icon_background_color: "#FFFFFF"
+    image_dark: assets/images/splash_logo.png
+    icon_background_color_dark: "#121212"
+
+  # スプラッシュ表示後の最短待機時間（iOS）
+  # Android はシステムが自動管理するため設定不要
+  ios: true
+  android: true
+  web: false

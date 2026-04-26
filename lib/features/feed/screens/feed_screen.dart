@@ -13,13 +13,46 @@ import 'package:yu_map/models/post.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/post_provider.dart';
 
-class FeedScreen extends ConsumerWidget {
+class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends ConsumerState<FeedScreen> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // スクロールが末尾付近（200px以内）に達したら追加読み込みを実行する
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    final current = _scrollController.offset;
+    // 末尾まで200px以内になったら次ページを取得
+    if (current >= maxExtent - 200) {
+      ref.read(postFeedProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isSignedIn = ref.watch(isSignedInProvider);
     final feedAsync = ref.watch(postFeedProvider);
+    final notifier = ref.watch(postFeedProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(
@@ -36,10 +69,19 @@ class FeedScreen extends ConsumerWidget {
               ref.read(postFeedProvider.notifier).load();
             },
             child: ListView.separated(
+              controller: _scrollController,
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: posts.length,
+              // hasMore=true なら末尾にローディング行を追加
+              itemCount: posts.length + (notifier.hasMore ? 1 : 0),
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
+                if (index == posts.length) {
+                  // 末尾ローディングインジケーター
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
                 return _PostCard(post: posts[index]);
               },
             ),
@@ -103,8 +145,7 @@ class _PostCard extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(
-                foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('削除'),
           ),
         ],
@@ -117,6 +158,54 @@ class _PostCard extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('削除に失敗しました。もう一度お試しください。')),
+        );
+      }
+    }
+  }
+
+  /// 投稿編集ダイアログを表示し、OKなら内容を更新する（C-3対応）
+  ///
+  /// TextEditingController で現在の投稿テキストを初期値にセットする。
+  /// ダイアログ外タップまたは「キャンセル」で変更なし。
+  Future<void> _showEditDialog(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController(text: post.content);
+    final newContent = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('投稿を編集'),
+        content: TextField(
+          controller: controller,
+          maxLines: 5,
+          maxLength: 500,
+          autofocus: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: '内容を入力...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) Navigator.of(ctx).pop(text);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (newContent == null || newContent == post.content) return;
+    try {
+      await ref.read(postFeedProvider.notifier).editPost(post.id, newContent);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('編集に失敗しました。もう一度お試しください。')),
         );
       }
     }
@@ -172,23 +261,37 @@ class _PostCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              // 自分の投稿だけ「…」メニューを表示
+              // 自分の投稿だけ「…」メニューを表示（編集・削除）
               if (isMyPost)
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert,
                       size: 18, color: Color(0xFF9E9E9E)),
                   tooltip: '操作',
                   onSelected: (value) {
-                    if (value == 'delete') {
+                    if (value == 'edit') {
+                      _showEditDialog(context, ref);
+                    } else if (value == 'delete') {
                       _confirmDelete(context, ref);
                     }
                   },
                   itemBuilder: (_) => [
+                    // C-3対応: 編集メニューを追加
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('編集'),
+                        ],
+                      ),
+                    ),
                     const PopupMenuItem(
                       value: 'delete',
                       child: Row(
                         children: [
-                          Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                          Icon(Icons.delete_outline,
+                              color: Colors.red, size: 18),
                           SizedBox(width: 8),
                           Text('削除', style: TextStyle(color: Colors.red)),
                         ],
@@ -263,18 +366,35 @@ class _PostCard extends ConsumerWidget {
               _LikeButton(post: post, isSignedIn: isSignedIn),
               const SizedBox(width: 16),
               // commentsCount は posts.comments_count（DBトリガーで自動更新）
-              if (post.commentsCount > 0) ...[
-                const Icon(Icons.comment_outlined,
-                    size: 18, color: Color(0xFF757575)),
-                const SizedBox(width: 4),
-                Text(
-                  '${post.commentsCount}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF757575),
+              // UX-V10-1: コメントアイコンをタップすると PostDetailScreen を
+              // 開き、コメント入力欄に自動フォーカス（キーボードを即時表示）する。
+              // UX-V11-5: 0件でも常にコメントアイコンを表示することで
+              // 「コメントできる」ことに気づいてもらう（0件非表示だと見逃しやすい）。
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PostDetailScreen(
+                      post: post,
+                      focusComment: true,
+                    ),
                   ),
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.comment_outlined,
+                        size: 18, color: Color(0xFF757575)),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${post.commentsCount}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF757575),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -355,28 +475,51 @@ class _PostAvatar extends StatelessWidget {
 
 // ── 空フィード表示 ─────────────────────────────────────────────────────────────
 
-class _EmptyFeedView extends StatelessWidget {
+/// 投稿が0件の場合に表示するウィジェット。
+/// RefreshIndicator が機能するには scrollable な子が必要なため
+/// ListView でラップしてプルリフレッシュを有効にする（UX-V11-5対応）。
+class _EmptyFeedView extends ConsumerWidget {
   const _EmptyFeedView();
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.read(postFeedProvider.notifier).load();
+      },
+      child: ListView(
+        // コンテンツが少なくても引っ張って更新できるよう AlwaysScrollableScrollPhysics を指定
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          const Text('♨️', style: TextStyle(fontSize: 64)),
-          const SizedBox(height: 16),
-          Text(
-            '投稿がまだありません',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '温泉の感想を投稿してみましょう！',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: const Color(0xFF757575)),
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('♨️', style: TextStyle(fontSize: 64)),
+                const SizedBox(height: 16),
+                Text(
+                  '投稿がまだありません',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '温泉の感想を投稿してみましょう！',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: const Color(0xFF757575)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '（下に引っ張って更新できます）',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: const Color(0xFF9E9E9E)),
+                ),
+              ],
+            ),
           ),
         ],
       ),

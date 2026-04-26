@@ -74,6 +74,9 @@ dev_dependencies:
   json_serializable: ^6.7.1
   riverpod_generator: ^2.3.3
   mocktail: ^1.0.0
+  # スプラッシュ画面生成ツール（A-1対応）
+  # `flutter pub run flutter_native_splash:create` でネイティブスプラッシュを生成する
+  flutter_native_splash: ^2.3.10
 
 flutter:
   generate: true

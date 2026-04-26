@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/providers/location_provider.dart';
 import 'package:yu_map/services/facility_service.dart';
 
 export 'package:yu_map/services/facility_service.dart' show FacilitySortBy;
@@ -203,6 +204,10 @@ final facilityListProvider =
   final service = ref.watch(facilityServiceProvider);
   if (service == null) return [];
   final params = ref.watch(facilitySearchParamsProvider);
+  // 距離順ソートのとき DB ソートは品質順（全件取得後にクライアント側でソート）
+  final dbSortBy = params.sortBy == FacilitySortBy.distance
+      ? FacilitySortBy.qualityScore
+      : params.sortBy;
   var results = await service.searchFacilities(
     searchQuery: params.searchQuery,
     prefectureId: params.prefectureId,
@@ -212,7 +217,7 @@ final facilityListProvider =
     longitude: params.longitude,
     radiusMeters: params.radiusMeters,
     page: params.page,
-    sortBy: params.sortBy,
+    sortBy: dbSortBy,
   );
   // isOpenNow=true のとき、営業時間を解析して閉業中の施設を除外する。
   // openingHours が null / 解析不能（checkOpenNow==null）な施設は除外しない。
@@ -220,6 +225,29 @@ final facilityListProvider =
     results = results
         .where((f) => checkOpenNow(f.openingHours) != false)
         .toList();
+  }
+  // 距離順ソート: currentLocationProvider の現在地を使ってクライアント側で並べ替える。
+  // 現在地が未取得の場合はソートしない（距離なし施設は末尾に）。
+  if (params.sortBy == FacilitySortBy.distance) {
+    final location = ref.read(currentLocationProvider);
+    results.sort((a, b) {
+      final da = computeDistanceKm(
+        lat1: location?.lat,
+        lon1: location?.lng,
+        lat2: a.latitude,
+        lon2: a.longitude,
+      );
+      final db = computeDistanceKm(
+        lat1: location?.lat,
+        lon1: location?.lng,
+        lat2: b.latitude,
+        lon2: b.longitude,
+      );
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;  // 距離不明は末尾
+      if (db == null) return -1;
+      return da.compareTo(db);
+    });
   }
   return results;
 });
@@ -304,3 +332,35 @@ final facilityAmenitiesProvider =
     return [];
   }
 });
+
+// ── Facility photos ───────────────────────────────────────────────────────────
+
+/// 施設の写真 URL リスト（最新5枚）を取得する共有プロバイダー。
+///
+/// facility_preview_sheet と facility_detail_screen の両方で使う。
+/// CODE-V13-1 修正: autoDispose を除去し、プレビューシート→詳細画面の遷移時に
+/// キャッシュが破棄されて二重 API 呼び出しが発生する問題を解消する。
+final facilityPhotosProvider =
+    FutureProvider.family<List<String>, String>(
+  (ref, facilityId) async {
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) return [];
+    try {
+      final rows = await client
+          .from('photos')
+          .select('storage_path, thumbnail_path')
+          .eq('facility_id', facilityId)
+          .order('created_at', ascending: false)
+          .limit(5) as List;
+
+      return rows.map((row) {
+        final path = row['thumbnail_path'] as String? ??
+            row['storage_path'] as String?;
+        if (path == null || path.isEmpty) return '';
+        return client.storage.from('photos').getPublicUrl(path);
+      }).where((url) => url.isNotEmpty).toList();
+    } catch (_) {
+      return [];
+    }
+  },
+);

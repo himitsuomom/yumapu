@@ -291,6 +291,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       facilities,
       onTap: _showFacilityPreview,
       zoomLevel: zoom,
+      // Bug-V11-1対応: クラスターマーカーをタップしたらズームインする。
+      // +2段階ズームアップしてクラスターを展開する。
+      onClusterTap: (center, targetZoom) {
+        _mapController.move(center, targetZoom);
+      },
     );
     setState(() => _markers = markers);
   }
@@ -347,6 +352,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final hasFilter = params.facilityTypeId != null ||
         params.amenityIds.isNotEmpty ||
         params.isOpenNow;
+    // UX-V13-1: 現在地座標（null = 未取得 or 権限なし）
+    final currentLoc = ref.watch(currentLocationProvider);
 
     // 検索クエリがある場合に表示する × バッジ
     final hasSearchQuery = params.searchQuery != null;
@@ -377,6 +384,42 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 userAgentPackageName: 'com.yumap.app',
                 maxNativeZoom: 18,
               ),
+              // UX-V13-1: 現在地マーカー（青い丸）
+              // currentLoc が null でなければ CircleLayer + MarkerLayer の2層で描画する。
+              // flutter_map の各 Layer は FlutterMap.children の直接の子として配置する必要がある
+              // （Stack で包むと座標変換が壊れる）。
+              if (currentLoc != null)
+                CircleLayer(circles: [
+                  CircleMarker(
+                    point: LatLng(currentLoc.lat, currentLoc.lng),
+                    color: const Color(0x331565C0),
+                    borderColor: const Color(0x881565C0),
+                    borderStrokeWidth: 1,
+                    radius: 30,
+                  ),
+                ]),
+              if (currentLoc != null)
+                MarkerLayer(markers: [
+                  Marker(
+                    point: LatLng(currentLoc.lat, currentLoc.lng),
+                    width: 18,
+                    height: 18,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1565C0),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2.5),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ]),
               MarkerLayer(markers: _markers),
             ],
           ),
@@ -400,7 +443,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     onChanged: _onSearchChanged,
                     onSubmitted: _onSearchSubmitted,
                     decoration: InputDecoration(
-                      hintText: '施設名で検索',
+                      hintText: '施設名・エリアで検索',
                       // ローディング中はスピナー、通常は虫眼鏡アイコン
                       prefixIcon: isLoading
                           ? const Padding(
@@ -525,7 +568,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 20, vertical: 14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.93),
+                    color: Colors.white.withAlpha(237), // 0.93 * 255 ≈ 237
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: const [
                       BoxShadow(

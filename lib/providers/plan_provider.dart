@@ -139,6 +139,56 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
       state = AsyncError(e, st);
     }
   }
+
+  /// プラン内の施設順序を並べ替える（UX-V11-4対応）。
+  ///
+  /// [newFacilityIds]: 並べ替え後の施設 ID リスト（全件 + 同じ施設が入っていること）
+  Future<void> reorderFacilitiesInPlan({
+    required String planId,
+    required List<String> newFacilityIds,
+  }) async {
+    final client = _client;
+    final userId = _userId;
+    if (client == null || userId == null) {
+      state = AsyncError('ログインが必要です', StackTrace.current);
+      return;
+    }
+
+    try {
+      await client
+          .from('onsen_plans')
+          .update({'facility_ids': newFacilityIds})
+          .eq('id', planId)
+          .eq('user_id', userId);
+
+      state = const AsyncData(null);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
+
+  /// プランを完全に削除する
+  Future<void> deletePlan(String planId) async {
+    final client = _client;
+    final userId = _userId;
+    if (client == null || userId == null) {
+      state = AsyncError('ログインが必要です', StackTrace.current);
+      return;
+    }
+
+    state = const AsyncLoading();
+    try {
+      await client
+          .from('onsen_plans')
+          .delete()
+          .eq('id', planId)
+          .eq('user_id', userId);
+
+      state = const AsyncData(null);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
 }
 
 final planNotifierProvider =

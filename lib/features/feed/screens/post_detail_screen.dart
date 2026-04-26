@@ -12,17 +12,106 @@ import 'package:yu_map/providers/comment_provider.dart';
 import 'package:yu_map/providers/post_provider.dart';
 
 class PostDetailScreen extends ConsumerWidget {
-  const PostDetailScreen({super.key, required this.post});
+  /// [focusComment] が true のとき、画面表示直後にコメント入力欄へ自動フォーカスする。
+  /// FeedScreen のコメントアイコンからタップされた場合に true を渡す（UX-V10-1）。
+  const PostDetailScreen({
+    super.key,
+    required this.post,
+    this.focusComment = false,
+  });
 
   final Post post;
+
+  /// コメント入力欄を自動フォーカスするかどうか。
+  final bool focusComment;
+
+  /// 投稿編集ダイアログを表示する（C-3対応）
+  Future<void> _showEditDialog(
+      BuildContext context, WidgetRef ref, String currentContent) async {
+    final controller = TextEditingController(text: currentContent);
+    final newContent = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('投稿を編集'),
+        content: TextField(
+          controller: controller,
+          maxLines: 5,
+          maxLength: 500,
+          autofocus: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: '内容を入力...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isNotEmpty) Navigator.of(ctx).pop(text);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (newContent == null || newContent == currentContent) return;
+    try {
+      await ref.read(postFeedProvider.notifier).editPost(post.id, newContent);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('編集に失敗しました。もう一度お試しください。')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final commentsAsync = ref.watch(commentProvider(post.id));
     final isSignedIn = ref.watch(isSignedInProvider);
+    // 自分のコメントの削除判定用：ログイン中ユーザーのID
+    final currentUserId = ref.watch(sessionProvider)?.user.id;
+    // 最新の投稿内容を postFeedProvider から取得（編集後に本文を更新するため）
+    final feedAsync = ref.watch(postFeedProvider);
+    final latestPost =
+        feedAsync.valueOrNull?.where((p) => p.id == post.id).firstOrNull ??
+            post;
+    final isMyPost = currentUserId != null && post.userId == currentUserId;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('投稿詳細')),
+      appBar: AppBar(
+        title: const Text('投稿詳細'),
+        // 自分の投稿の場合のみ編集メニューを表示
+        actions: [
+          if (isMyPost)
+            PopupMenuButton<String>(
+              tooltip: '操作',
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _showEditDialog(context, ref, latestPost.content);
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('編集'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
       body: Column(
         children: [
           // ── スクロール可能なコンテンツ ─────────────────────────────
@@ -30,8 +119,9 @@ class PostDetailScreen extends ConsumerWidget {
             child: CustomScrollView(
               slivers: [
                 // ── 投稿本文 ────────────────────────────────────────
+                // latestPost を渡すことで編集後に本文が即時更新される
                 SliverToBoxAdapter(
-                  child: _PostBody(post: post),
+                  child: _PostBody(post: latestPost),
                 ),
 
                 // ── コメントヘッダー ─────────────────────────────────
@@ -71,6 +161,8 @@ class PostDetailScreen extends ConsumerWidget {
                       delegate: SliverChildBuilderDelegate(
                         (context, index) => _CommentTile(
                           comment: comments[index],
+                          postId: post.id,
+                          currentUserId: currentUserId,
                         ),
                         childCount: comments.length,
                       ),
@@ -108,7 +200,7 @@ class PostDetailScreen extends ConsumerWidget {
           // ── 下部コメント入力エリア（ログイン時のみ表示） ────────────
           if (isSignedIn) ...[
             const Divider(height: 1),
-            _CommentInputBar(postId: post.id),
+            _CommentInputBar(postId: post.id, autoFocus: focusComment),
           ],
         ],
       ),
@@ -314,15 +406,52 @@ class _DetailAvatar extends StatelessWidget {
 
 // ── コメント行 ────────────────────────────────────────────────────────────────
 
-class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment});
+class _CommentTile extends ConsumerWidget {
+  const _CommentTile({
+    required this.comment,
+    required this.postId,
+    required this.currentUserId,
+  });
 
   final Comment comment;
+  final String postId;
+
+  /// ログイン中のユーザーID。未ログイン時は null。
+  final String? currentUserId;
 
   static final _dateFormat = DateFormat('MM/dd HH:mm');
 
+  /// 削除確認ダイアログを表示し、OKなら削除を実行する。
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('コメントを削除'),
+        content: const Text('このコメントを削除しますか？\nこの操作は取り消せません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await ref
+          .read(commentProvider(postId).notifier)
+          .deleteComment(comment.id);
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     String formattedTime;
     try {
       final dt = DateTime.parse(comment.time).toLocal();
@@ -331,8 +460,10 @@ class _CommentTile extends StatelessWidget {
       formattedTime = comment.time;
     }
 
+    final isOwn = currentUserId != null && comment.userId == currentUserId;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -366,6 +497,16 @@ class _CommentTile extends StatelessWidget {
               ],
             ),
           ),
+
+          // 自分のコメントのみ削除ボタンを表示
+          if (isOwn)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 18),
+              color: Colors.grey,
+              tooltip: 'コメントを削除',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _confirmDelete(context, ref),
+            ),
         ],
       ),
     );
@@ -397,9 +538,12 @@ class _CommentAvatar extends StatelessWidget {
 // ── コメント入力バー ──────────────────────────────────────────────────────────
 
 class _CommentInputBar extends ConsumerStatefulWidget {
-  const _CommentInputBar({required this.postId});
+  const _CommentInputBar({required this.postId, this.autoFocus = false});
 
   final String postId;
+
+  /// true のとき、ウィジェット表示直後にキーボードを自動表示する（UX-V10-1）。
+  final bool autoFocus;
 
   @override
   ConsumerState<_CommentInputBar> createState() => _CommentInputBarState();
@@ -407,11 +551,28 @@ class _CommentInputBar extends ConsumerStatefulWidget {
 
 class _CommentInputBarState extends ConsumerState<_CommentInputBar> {
   final _controller = TextEditingController();
+  final _focusNode = FocusNode();
   bool _isSending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // autoFocus が true のとき、フレームが描画されてからキーボードを表示する。
+    // addPostFrameCallback で遅延させないと画面遷移アニメーション中に
+    // フォーカスが当たり、描画が乱れることがある。
+    if (widget.autoFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _focusNode.requestFocus();
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -453,6 +614,7 @@ class _CommentInputBarState extends ConsumerState<_CommentInputBar> {
             Expanded(
               child: TextField(
                 controller: _controller,
+                focusNode: _focusNode,
                 maxLength: 500,
                 maxLines: 3,
                 minLines: 1,

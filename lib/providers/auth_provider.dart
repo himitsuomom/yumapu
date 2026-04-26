@@ -118,9 +118,75 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
       state = AsyncError(e, st);
     }
   }
+
+  /// アカウントとすべての関連データを削除する。
+  ///
+  /// Supabase の `delete_user_account` RPC（SECURITY DEFINER）を呼び出して
+  /// auth.users から削除し、ON DELETE CASCADE で全関連テーブルを連鎖削除する。
+  /// 削除後はセッションをクリアして未ログイン状態に戻す。
+  Future<void> deleteAccount() async {
+    if (_client == null) {
+      state = AsyncError('Supabase is not configured.', StackTrace.current);
+      return;
+    }
+    state = const AsyncLoading();
+    try {
+      // DB 上のすべてのユーザーデータを削除（RPC が auth.users から CASCADE 削除）
+      await _client.rpc('delete_user_account');
+      // セッションをクリアしてログアウト状態にする
+      // （auth.users 削除後はセッショントークンが無効になるため、クライアント側も解除）
+      await _client.auth.signOut();
+      state = const AsyncData(null);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
 }
 
 final authNotifierProvider =
     StateNotifierProvider<AuthNotifier, AsyncValue<void>>((ref) {
   return AuthNotifier(ref.read(supabaseClientProvider));
+});
+
+// ── 管理者・オーナー権限チェック ──────────────────────────────────────────────
+
+/// 現在のユーザーが管理者（is_admin = true）かどうかを返す。
+/// 未ログインまたはDBエラー時は false。
+final isAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final session = ref.watch(sessionProvider);
+  if (session == null) return false;
+  final client = ref.read(supabaseClientProvider);
+  if (client == null) return false;
+  try {
+    final data = await client
+        .from('users')
+        .select('is_admin')
+        .eq('id', session.user.id)
+        .maybeSingle();
+    return (data?['is_admin'] as bool?) ?? false;
+  } catch (_) {
+    return false;
+  }
+});
+
+/// 指定施設ID に対して、現在のユーザーが承認済みオーナーかどうかを返す。
+/// 未ログイン・DBエラー時は false。
+final isApprovedOwnerProvider =
+    FutureProvider.autoDispose.family<bool, String>((ref, facilityId) async {
+  final session = ref.watch(sessionProvider);
+  if (session == null) return false;
+  final client = ref.read(supabaseClientProvider);
+  if (client == null) return false;
+  try {
+    final data = await client
+        .from('owner_registrations')
+        .select('id')
+        .eq('facility_id', facilityId)
+        .eq('user_id', session.user.id)
+        .eq('status', 'approved')
+        .maybeSingle();
+    return data != null;
+  } catch (_) {
+    return false;
+  }
 });

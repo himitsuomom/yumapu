@@ -6,6 +6,7 @@
 /// user_name / user_avatar はJOINを避けるための非正規化カラム。
 class Comment {
   final String id;
+  final String userId;
   final String user;
   final String avatar;
   final String text;
@@ -13,6 +14,7 @@ class Comment {
 
   Comment({
     required this.id,
+    required this.userId,
     required this.user,
     required this.avatar,
     required this.text,
@@ -22,6 +24,7 @@ class Comment {
   factory Comment.fromJson(Map<String, dynamic> json) {
     return Comment(
       id: json['id'] as String? ?? '',
+      userId: json['user_id'] as String? ?? '',
       // comments テーブルのカラム名は user_name
       user: json['user_name'] as String? ?? '削除済みユーザー',
       avatar: json['user_avatar'] as String? ?? '',
@@ -33,6 +36,7 @@ class Comment {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'user_id': userId,
       'user_name': user,
       'user_avatar': avatar,
       'text': text,
@@ -112,18 +116,24 @@ class Post {
     );
   }
 
-  /// いいね数・いいね済み状態だけを変えた新しい Post を返す
+  /// フィールドを一部だけ変えた新しい Post を返す。
   ///
-  /// Dart では `final` でないフィールドを直接変更できるが、
-  /// 楽観的UI更新のロールバック（元に戻す）のために
+  /// Dart では `final` フィールドを直接変更できないため、
+  /// 楽観的UI更新（即時反映 → DB失敗時ロールバック）のために
   /// 不変な新オブジェクトを作る方が安全。
-  Post copyWith({int? likes, bool? isLiked, int? commentsCount}) {
+  /// [content] は C-3（投稿編集機能）の楽観的更新に使用する。
+  Post copyWith({
+    int? likes,
+    bool? isLiked,
+    int? commentsCount,
+    String? content,
+  }) {
     return Post(
       id: id,
       userId: userId,
       user: user,
       avatar: avatar,
-      content: content,
+      content: content ?? this.content,
       time: time,
       likes: likes ?? this.likes,
       isLiked: isLiked ?? this.isLiked,

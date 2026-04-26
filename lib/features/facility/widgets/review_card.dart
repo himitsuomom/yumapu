@@ -8,17 +8,31 @@ import 'package:yu_map/widgets/crown_badge.dart';
 ///
 /// Uses [UserAvatarWithCrown] and [PremiumChip] for premium author display.
 /// The likes icon is suppressed when [Review.likesCount] == 0.
+/// When [onDelete] is non-null, a "…" menu is shown allowing the owner to
+/// delete their review after a confirmation dialog.
 class ReviewCard extends StatelessWidget {
   const ReviewCard({
     super.key,
     required this.review,
     this.onLike,
+    this.onUnlike,
+    this.isLiked = false,
+    this.onDelete,
   });
 
   final Review review;
 
-  /// Called when the user taps the like button. Pass null to hide the button.
+  /// 未いいね状態でタップされたときに呼ばれる。null で非表示。
   final VoidCallback? onLike;
+
+  /// いいね済み状態でタップされたときに呼ばれる（取り消し）。null で非表示。
+  final VoidCallback? onUnlike;
+
+  /// true の場合はいいね済み表示（赤いハート）。false は未いいね表示。
+  final bool isLiked;
+
+  /// レビュー削除時に呼ばれる。null の場合はメニューを表示しない（他人のレビュー）。
+  final VoidCallback? onDelete;
 
   static final _dateFormat = DateFormat('yyyy/MM/dd', 'ja');
 
@@ -75,19 +89,76 @@ class ReviewCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                _StarRating(rating: review.rating),
+                _StarRating(rating: review.rating.toDouble()),
+                // ── 削除メニュー（レビュー投稿者本人のみ表示）──────────────
+                if (onDelete != null)
+                  PopupMenuButton<String>(
+                    iconSize: 18,
+                    padding: EdgeInsets.zero,
+                    tooltip: 'メニュー',
+                    onSelected: (value) async {
+                      if (value == 'delete') {
+                        // 削除前に確認ダイアログを表示する
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: const Text('レビューを削除しますか？'),
+                            content: const Text('この操作は取り消せません。'),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(false),
+                                child: const Text('キャンセル'),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                ),
+                                child: const Text('削除'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true) {
+                          onDelete!();
+                        }
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline,
+                                size: 18, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('削除',
+                                style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 10),
             // ── Review content ───────────────────────────────────────────
             Text(review.content, style: textTheme.bodyMedium),
-            // ── Likes row (hidden when count == 0) ───────────────────────
-            if (review.likesCount > 0 || onLike != null) ...[
+            // ── Likes row ────────────────────────────────────────────────
+            // いいね件数 > 0 または ログイン中（onLike/onUnlike が非null）の場合に表示
+            if (review.likesCount > 0 || onLike != null || onUnlike != null) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
-                  if (review.likesCount > 0) ...[
-                    const Icon(Icons.favorite, size: 14, color: Colors.red),
+                  // いいね件数（0件でも isLiked の場合は表示）
+                  if (review.likesCount > 0 || isLiked) ...[
+                    Icon(
+                      Icons.favorite,
+                      size: 14,
+                      color: isLiked ? Colors.red : Colors.grey[400],
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       '${review.likesCount}',
@@ -95,9 +166,10 @@ class ReviewCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                   ],
-                  if (onLike != null)
+                  // いいね / いいね取り消しトグルボタン
+                  if (onLike != null || onUnlike != null)
                     InkWell(
-                      onTap: onLike,
+                      onTap: isLiked ? onUnlike : onLike,
                       borderRadius: BorderRadius.circular(4),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -106,15 +178,21 @@ class ReviewCard extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.favorite_border,
+                              isLiked
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
                               size: 14,
-                              color: Theme.of(context).colorScheme.primary,
+                              color: isLiked
+                                  ? Colors.red
+                                  : Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'いいね',
+                              isLiked ? 'いいね済み' : 'いいね',
                               style: textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
+                                color: isLiked
+                                    ? Colors.red
+                                    : Theme.of(context).colorScheme.primary,
                               ),
                             ),
                           ],
@@ -133,21 +211,29 @@ class ReviewCard extends StatelessWidget {
 
 // ── Star rating ───────────────────────────────────────────────────────────────
 
+/// 星評価ウィジェット。double 型を受け取り半星（Icons.star_half）に対応。
+/// 整数の評価値（1〜5）でも問題なく動作する。
+/// ヘッダーの平均評価と同一コンポーネントを共有するため double で統一。
 class _StarRating extends StatelessWidget {
   const _StarRating({required this.rating});
 
-  final int rating;
+  final double rating;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
-        return Icon(
-          i < rating ? Icons.star : Icons.star_border,
-          size: 14,
-          color: const Color(0xFFFFC107),
-        );
+        final starValue = i + 1;
+        final IconData icon;
+        if (rating >= starValue) {
+          icon = Icons.star;
+        } else if (rating >= starValue - 0.5) {
+          icon = Icons.star_half;
+        } else {
+          icon = Icons.star_border;
+        }
+        return Icon(icon, size: 14, color: const Color(0xFFFFC107));
       }),
     );
   }
