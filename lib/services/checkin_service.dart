@@ -17,6 +17,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/widgets/badge_celebration_dialog.dart';
+import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/location_provider.dart';
@@ -50,15 +51,13 @@ abstract final class CheckinService {
     final session = ref.read(sessionProvider);
     if (session == null) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('チェックインするにはログインが必要です'),
-          action: SnackBarAction(
-            label: 'ログイン',
-            onPressed: () => Navigator.of(context).pushNamed('/login'),
-          ),
-        ),
+      final goLogin = await GuestRestrictionDialog.show(
+        context,
+        featureName: 'チェックイン',
       );
+      if (goLogin == true && context.mounted) {
+        Navigator.of(context).pushNamed('/login');
+      }
       return;
     }
 

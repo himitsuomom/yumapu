@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/core/widgets/photo_gallery_viewer.dart';
 import 'package:yu_map/domain/entities/review.dart';
@@ -104,15 +105,13 @@ class _FacilityPreviewSheetState
     final session = ref.read(sessionProvider);
     if (session == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('写真を投稿するにはログインが必要です'),
-          action: SnackBarAction(
-            label: 'ログイン',
-            onPressed: () => Navigator.of(context).pushNamed('/login'),
-          ),
-        ),
+      final goLogin = await GuestRestrictionDialog.show(
+        context,
+        featureName: '写真投稿',
       );
+      if (goLogin == true && mounted) {
+        Navigator.of(context).pushNamed('/login');
+      }
       return;
     }
 
@@ -642,22 +641,20 @@ class _FacilityPreviewSheetState
                       // クチコミを書く
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {
+                          onPressed: () async {
                             final isSignedIn =
                                 ref.read(isSignedInProvider);
                             if (!isSignedIn) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text('クチコミを書くにはログインが必要です'),
-                                  action: SnackBarAction(
-                                    label: 'ログイン',
-                                    onPressed: () =>
-                                        Navigator.of(context).pushNamed('/login'),
-                                  ),
-                                ),
+                              final goLogin = await GuestRestrictionDialog.show(
+                                context,
+                                featureName: 'クチコミ',
                               );
+                              if (goLogin == true && context.mounted) {
+                                Navigator.of(context).pushNamed('/login');
+                              }
                               return;
                             }
+                            if (!context.mounted) return;
                             showModalBottomSheet<void>(
                               context: context,
                               isScrollControlled: true,

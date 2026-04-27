@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/features/favorites/favorites_screen.dart';
 import 'package:yu_map/features/map/screens/map_screen.dart';
 import 'package:yu_map/features/profile/screens/profile_screen.dart';
@@ -97,7 +98,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           final isGuestMode = ref.watch(guestModeProvider);
           return BottomNavigationBar(
             currentIndex: _currentIndex,
-            onTap: (index) {
+            onTap: (index) async {
+              // ゲストモード時: お気に入り(3)・プロフィール(4) はモーダルで案内する
+              if (isGuestMode && (index == 3 || index == 4)) {
+                final tabName = index == 3 ? 'お気に入り' : 'プロフィール';
+                final goLogin = await GuestRestrictionDialog.show(
+                  context,
+                  featureName: tabName,
+                );
+                if (goLogin == true && context.mounted) {
+                  Navigator.of(context).pushNamed('/login');
+                }
+                return; // タブは切り替えない
+              }
               setState(() {
                 _visitedIndices.add(index);
                 _currentIndex = index;
