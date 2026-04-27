@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/widgets/banner_ad_widget.dart';
@@ -179,6 +180,17 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
         const SnackBar(content: Text('電話を発信できませんでした')),
       );
     }
+  }
+
+  // ── Share（施設URLシェア）─────────────────────────────────────────────────
+  //
+  // share_plus を使って「https://yumap.app/facility/{id}」形式のURLをシェアする。
+  // URLを受け取った端末でアプリが開いている場合は app_links 経由でその施設へ遷移する。
+
+  void _shareFacility(Facility facility) {
+    final url = '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
+    final text = '${facility.name}\n$url';
+    Share.share(text, subject: '湯マップ — ${facility.name}');
   }
 
   // ── Check-in dialog ───────────────────────────────────────────────────────
@@ -507,6 +519,12 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
               ),
             ),
             actions: [
+              // Share button（ゲスト・ログイン問わず全員使える）
+              IconButton(
+                tooltip: 'シェア',
+                icon: const Icon(Icons.share_outlined, color: Colors.white),
+                onPressed: () => _shareFacility(facility),
+              ),
               // Favorite button — login only
               if (isSignedIn)
                 IconButton(

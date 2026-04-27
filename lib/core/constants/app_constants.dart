@@ -31,4 +31,10 @@ class AppConstants {
   // 空文字のままの場合は設定画面に「アプリを評価する」ボタンが表示されない。
   static const String appStoreUrl = '';       // 例: 'https://apps.apple.com/jp/app/yu-map/id1234567890'
   static const String googlePlayUrl = '';     // 例: 'https://play.google.com/store/apps/details?id=com.yumap.app'
+
+  // Deep Linking
+  // シェアURLのベース。アプリが `yumap://facility/{id}` を受信して詳細画面に遷移する。
+  // https://yumap.app は将来的にウェブ版へのフォールバック先として使用できる。
+  static const String deepLinkBaseUrl = 'https://yumap.app';
+  static const String deepLinkScheme = 'yumap';
 }

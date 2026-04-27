@@ -75,6 +75,8 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.yumap.app</string>
+				<!-- 🔗 Deep Linking: yumap://facility/{id} でアプリを起動して施設詳細へ遷移 -->
+				<string>yumap</string>
 			</array>
 		</dict>
 	</array>

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -159,10 +162,76 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
   static const _storage = FlutterSecureStorage();
   static const _guestModeKey = 'guest_mode';
 
+  // Deep Linking: app_links によるURL受信サブスクリプション
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
+
   @override
   void initState() {
     super.initState();
     _initStorage();
+    _initDeepLinks();
+  }
+
+  /// Deep Link（カスタムURLスキーム）の受信を開始する。
+  ///
+  /// 対応URL形式:
+  ///   yumap://facility/{facilityId}
+  ///   https://yumap.app/facility/{facilityId}  ← Universal Links / App Links（将来対応）
+  ///
+  /// アプリが既に起動している場合: uriLinkStream でストリーム受信
+  /// アプリが起動していなかった場合: getInitialLink() で起動時URIを取得
+  Future<void> _initDeepLinks() async {
+    // アプリ起動直後のリンク（cold start）を処理する
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) {
+        _handleDeepLink(initialUri);
+      }
+    } catch (_) {
+      // 取得失敗は無視（通常起動と同じ動作をする）
+    }
+
+    // アプリが前面にある状態でリンクを受信する（warm start）
+    _linkSub = _appLinks.uriLinkStream.listen(
+      _handleDeepLink,
+      onError: (_) {}, // エラーは無視
+    );
+  }
+
+  /// 受信したURIを解析して、対応する画面に遷移する。
+  ///
+  /// 例: yumap://facility/abc-123 → FacilityDetailScreen(facilityId: 'abc-123')
+  void _handleDeepLink(Uri uri) {
+    // scheme: 'yumap' または host が 'yumap.app'
+    final isCustomScheme = uri.scheme == AppConstants.deepLinkScheme;
+    final isUniversalLink =
+        uri.host == 'yumap.app' || uri.host == 'www.yumap.app';
+
+    if (!isCustomScheme && !isUniversalLink) return;
+
+    final segments = uri.pathSegments;
+    // yumap://facility/{id}  → pathSegments = ['facility', '{id}']
+    // https://yumap.app/facility/{id} → pathSegments = ['facility', '{id}']
+    if (segments.length >= 2 && segments[0] == 'facility') {
+      final facilityId = segments[1];
+      if (facilityId.isNotEmpty && mounted) {
+        // Navigator がスタックに積まれていることを前提に pushNamed する。
+        // まだ HomeShell が表示される前（_onboardingCompleted == null）の場合は
+        // 少し待ってから再実行する。
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            Navigator.of(context).pushNamed('/facility', arguments: facilityId);
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
   }
 
   /// オンボーディング完了フラグとゲストモードフラグを並行して読み込む。

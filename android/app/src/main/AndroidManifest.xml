@@ -58,6 +58,25 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- 🔗 Deep Linking: カスタムURLスキーム yumap:// -->
+            <!-- 例: yumap://facility/abc-123 でアプリを起動して施設詳細へ遷移する -->
+            <intent-filter android:label="湯マップ">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="yumap"/>
+            </intent-filter>
+
+            <!-- 🔗 App Links: https://yumap.app のURLでアプリを開く（要 assetlinks.json 設置）-->
+            <!-- 将来対応: yumap.app のウェブサーバーに
+                 /.well-known/assetlinks.json を配置することで有効になる -->
+            <intent-filter android:autoVerify="true" android:label="湯マップ">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="yumap.app"/>
+            </intent-filter>
         </activity>
         
         <!-- Flutter Embedding v2 -->
