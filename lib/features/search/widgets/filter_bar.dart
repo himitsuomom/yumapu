@@ -16,7 +16,35 @@ class AmenityOption {
   const AmenityOption({required this.id, required this.name});
 }
 
+/// 都道府県フィルター用のデータモデル。
+class PrefectureOption {
+  final String id;
+  final String name;
+  final String? region;
+  const PrefectureOption({required this.id, required this.name, this.region});
+}
+
 // ── Providers ─────────────────────────────────────────────────────────────────
+
+/// 都道府県一覧を取得するプロバイダー。
+/// 地域（region）でグルーピングして表示するために region も取得する。
+/// autoDispose なしで保持するのは、検索画面を行き来するたびに再取得しないためのキャッシュ最適化。
+final prefectureOptionsProvider =
+    FutureProvider<List<PrefectureOption>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return [];
+  final rows = await client
+      .from('prefectures')
+      .select('id, name, region')
+      .order('name') as List;
+  return rows
+      .map((r) => PrefectureOption(
+            id: r['id'] as String,
+            name: r['name'] as String,
+            region: r['region'] as String?,
+          ))
+      .toList();
+});
 
 final facilityTypeOptionsProvider =
     FutureProvider.autoDispose<List<FacilityTypeOption>>((ref) async {

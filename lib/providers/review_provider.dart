@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+// ignore_for_file: avoid_manual_providers_as_generated_provider_dependency
 
 // ── Review list (per facility) ───────────────────────────────────────────────
 
@@ -119,7 +120,8 @@ final facilityReviewSummaryProvider =
 
 /// ログイン中ユーザーが [facilityId] に既にレビューを投稿しているか確認する。
 ///
-/// WriteReviewScreen の表示前に呼び出し、重複投稿を防ぐために使用する。
+/// 将来の「投稿済みバナー」や「編集ショートカット」など施設詳細UIで
+/// 自分のレビューを素早く取得したいときに使う。
 /// 既存レビューがある場合は Review を返し、未投稿なら null を返す。
 final myReviewForFacilityProvider =
     FutureProvider.autoDispose.family<Review?, String>((ref, facilityId) async {
@@ -192,6 +194,37 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
       } else {
         state = AsyncError(e, st);
       }
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
+
+  /// 自分が投稿したレビューの内容と評価を更新する。
+  ///
+  /// RLS ポリシー "Users can update own reviews" により、
+  /// auth.uid() = user_id の行のみ UPDATE が許可される。
+  Future<void> editReview({
+    required String reviewId,
+    required String content,
+    required int rating,
+  }) async {
+    final client = _client;
+    final userId = _userId;
+    if (client == null || userId == null) {
+      state = AsyncError('ログインが必要です', StackTrace.current);
+      return;
+    }
+    state = const AsyncLoading();
+    try {
+      await client
+          .from('reviews')
+          .update({
+            'content': content,
+            'rating': rating,
+          })
+          .eq('id', reviewId)
+          .eq('user_id', userId);
+      state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
     }

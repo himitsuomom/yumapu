@@ -7,6 +7,7 @@ import 'package:yu_map/features/ranking/screens/ranking_screen.dart';
 import 'package:yu_map/features/search/screens/search_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 
 /// Root shell for signed-in users.
 ///
@@ -68,6 +69,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // homeTabIndexProvider が外部（お気に入り画面など）から更新されたら
+    // ボトムナビのタブを自動的に切り替える。
+    // listen のみで state 変化時に setState を呼ぶことで IndexedStack も更新される。
+    ref.listen<int>(homeTabIndexProvider, (previous, next) {
+      if (next != _currentIndex) {
+        setState(() {
+          _visitedIndices.add(next);
+          _currentIndex = next;
+        });
+      }
+    });
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
@@ -84,10 +97,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           final isGuestMode = ref.watch(guestModeProvider);
           return BottomNavigationBar(
             currentIndex: _currentIndex,
-            onTap: (index) => setState(() {
-              _visitedIndices.add(index); // 訪問済みとしてマーク
-              _currentIndex = index;
-            }),
+            onTap: (index) {
+              setState(() {
+                _visitedIndices.add(index);
+                _currentIndex = index;
+              });
+              // homeTabIndexProvider を同期してお気に入り→地図などの
+              // 外部からのタブ切り替えと状態を一致させる
+              ref.read(homeTabIndexProvider.notifier).state = index;
+            },
             // 5タブ以上は type を fixed にしないとラベルが消える
             type: BottomNavigationBarType.fixed,
             items: [

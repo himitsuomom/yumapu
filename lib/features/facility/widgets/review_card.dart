@@ -8,8 +8,8 @@ import 'package:yu_map/widgets/crown_badge.dart';
 ///
 /// Uses [UserAvatarWithCrown] and [PremiumChip] for premium author display.
 /// The likes icon is suppressed when [Review.likesCount] == 0.
-/// When [onDelete] is non-null, a "…" menu is shown allowing the owner to
-/// delete their review after a confirmation dialog.
+/// When [onDelete] or [onEdit] is non-null, a "…" menu is shown allowing the
+/// owner to edit or delete their review.
 class ReviewCard extends StatelessWidget {
   const ReviewCard({
     super.key,
@@ -18,6 +18,7 @@ class ReviewCard extends StatelessWidget {
     this.onUnlike,
     this.isLiked = false,
     this.onDelete,
+    this.onEdit,
   });
 
   final Review review;
@@ -33,6 +34,9 @@ class ReviewCard extends StatelessWidget {
 
   /// レビュー削除時に呼ばれる。null の場合はメニューを表示しない（他人のレビュー）。
   final VoidCallback? onDelete;
+
+  /// レビュー編集時に呼ばれる。null の場合は編集メニューを表示しない。
+  final VoidCallback? onEdit;
 
   static final _dateFormat = DateFormat('yyyy/MM/dd', 'ja');
 
@@ -90,14 +94,17 @@ class ReviewCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 _StarRating(rating: review.rating.toDouble()),
-                // ── 削除メニュー（レビュー投稿者本人のみ表示）──────────────
-                if (onDelete != null)
+                // ── 編集・削除メニュー（レビュー投稿者本人のみ表示）───────────
+                if (onEdit != null || onDelete != null)
                   PopupMenuButton<String>(
                     iconSize: 18,
                     padding: EdgeInsets.zero,
                     tooltip: 'メニュー',
                     onSelected: (value) async {
-                      if (value == 'delete') {
+                      if (value == 'edit') {
+                        // 編集コールバックを呼ぶ（BottomSheetは呼び出し元で開く）
+                        onEdit!();
+                      } else if (value == 'delete') {
                         // 削除前に確認ダイアログを表示する
                         final confirmed = await showDialog<bool>(
                           context: context,
@@ -127,18 +134,31 @@ class ReviewCard extends StatelessWidget {
                       }
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete_outline,
-                                size: 18, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text('削除',
-                                style: TextStyle(color: Colors.red)),
-                          ],
+                      if (onEdit != null)
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit_outlined,
+                                  size: 18),
+                              SizedBox(width: 8),
+                              Text('編集'),
+                            ],
+                          ),
                         ),
-                      ),
+                      if (onDelete != null)
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline,
+                                  size: 18, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('削除',
+                                  style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
               ],

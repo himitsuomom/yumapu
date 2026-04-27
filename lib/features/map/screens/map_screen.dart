@@ -25,6 +25,7 @@ import 'package:yu_map/features/map/widgets/facility_preview_sheet.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/location_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 import 'package:yu_map/services/map_clustering_service.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -336,6 +337,29 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // お気に入り画面など外部から「この座標に飛んでほしい」が届いたとき、
+    // カメラを移動して周辺施設を再取得する。
+    // 使用後は null にリセットして二重実行を防ぐ。
+    ref.listen<({double lat, double lng})?>(
+      mapFlyToProvider,
+      (previous, next) {
+        if (next == null) return;
+        final target = LatLng(next.lat, next.lng);
+        _mapController.move(target, 15);
+        _lastSearchCenter = target;
+        _lastSearchZoom = 15;
+        ref.read(mapSearchParamsProvider.notifier).update(
+              (params) => params.copyWith(
+                latitude: next.lat,
+                longitude: next.lng,
+                radiusMeters: 3000,
+              ),
+            );
+        // 使用後はリセット（次回も同じ施設に飛べるよう null に戻す）
+        ref.read(mapFlyToProvider.notifier).state = null;
+      },
+    );
+
     ref.listen<AsyncValue<List<Facility>>>(
       mapFacilityListProvider,
       (previous, next) {

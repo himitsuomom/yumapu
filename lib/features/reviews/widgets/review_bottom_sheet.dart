@@ -1,11 +1,11 @@
 // lib/features/reviews/widgets/review_bottom_sheet.dart
 //
-// レビュー投稿ボトムシート（共通ウィジェット）。
+// レビュー投稿／編集ボトムシート（共通ウィジェット）。
 //
-// facility_detail_screen.dart と facility_preview_sheet.dart の
-// 両方から呼び出せるよう、公開クラスとして定義している。
+// 新規投稿モード（existingReviewId == null）と
+// 編集モード（existingReviewId が非null）の両方に対応する。
 //
-// 使い方:
+// 使い方（新規投稿）:
 //   showModalBottomSheet(
 //     context: context,
 //     isScrollControlled: true,
@@ -15,6 +15,19 @@
 //         ref.invalidate(reviewListProvider(facility.id));
 //         ref.invalidate(reviewCountProvider(facility.id));
 //       },
+//     ),
+//   );
+//
+// 使い方（編集）:
+//   showModalBottomSheet(
+//     context: context,
+//     isScrollControlled: true,
+//     builder: (_) => ReviewBottomSheet(
+//       facilityId: facility.id,
+//       existingReviewId: review.id,
+//       existingContent: review.content,
+//       existingRating: review.rating,
+//       onSubmitted: () => _loadReviews(),
 //     ),
 //   );
 
@@ -28,6 +41,9 @@ class ReviewBottomSheet extends ConsumerStatefulWidget {
     super.key,
     required this.facilityId,
     required this.onSubmitted,
+    this.existingReviewId,
+    this.existingContent,
+    this.existingRating,
   });
 
   /// 投稿対象の施設ID。
@@ -37,14 +53,36 @@ class ReviewBottomSheet extends ConsumerStatefulWidget {
   /// 呼び出し元でキャッシュ無効化などを行うこと。
   final VoidCallback onSubmitted;
 
+  /// 編集モード: 編集するレビューのID。null なら新規投稿モード。
+  final String? existingReviewId;
+
+  /// 編集モード: フォームに初期表示するレビュー本文。
+  final String? existingContent;
+
+  /// 編集モード: フォームに初期表示する評価（1〜5）。
+  final int? existingRating;
+
+  /// 編集モードかどうか。
+  bool get isEditMode => existingReviewId != null;
+
   @override
   ConsumerState<ReviewBottomSheet> createState() => _ReviewBottomSheetState();
 }
 
 class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
-  final _contentController = TextEditingController();
+  late final TextEditingController _contentController;
   final _formKey = GlobalKey<FormState>();
-  int _rating = 3;
+  late int _rating;
+
+  @override
+  void initState() {
+    super.initState();
+    // 編集モードの場合は既存の内容・評価で初期化する
+    _contentController = TextEditingController(
+      text: widget.existingContent ?? '',
+    );
+    _rating = widget.existingRating ?? 3;
+  }
 
   @override
   void dispose() {
@@ -54,11 +92,23 @@ class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    await ref.read(reviewNotifierProvider.notifier).postReview(
-          facilityId: widget.facilityId,
-          content: _contentController.text.trim(),
-          rating: _rating,
-        );
+
+    if (widget.isEditMode) {
+      // 編集モード: editReview を呼ぶ
+      await ref.read(reviewNotifierProvider.notifier).editReview(
+            reviewId: widget.existingReviewId!,
+            content: _contentController.text.trim(),
+            rating: _rating,
+          );
+    } else {
+      // 新規投稿モード: postReview を呼ぶ
+      await ref.read(reviewNotifierProvider.notifier).postReview(
+            facilityId: widget.facilityId,
+            content: _contentController.text.trim(),
+            rating: _rating,
+          );
+    }
+
     if (!mounted) return;
     final reviewState = ref.read(reviewNotifierProvider);
     reviewState.whenOrNull(
@@ -66,7 +116,11 @@ class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
         widget.onSubmitted();
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('レビューを投稿しました！')),
+          SnackBar(
+            content: Text(
+              widget.isEditMode ? 'レビューを更新しました！' : 'レビューを投稿しました！',
+            ),
+          ),
         );
       },
       error: (e, _) => ScaffoldMessenger.of(context).showSnackBar(
@@ -108,9 +162,9 @@ class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── タイトル ──────────────────────────────────────────────
+            // ── タイトル（投稿 / 編集で切り替え）────────────────────────
             Text(
-              'レビューを書く',
+              widget.isEditMode ? 'レビューを編集' : 'レビューを書く',
               style: Theme.of(context)
                   .textTheme
                   .titleMedium
@@ -142,8 +196,10 @@ class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
               maxLines: 5,
               maxLength: AppConstants.maxReviewLength,
               enabled: !isLoading,
-              decoration: const InputDecoration(
-                hintText: '施設の感想をお書きください（10文字以上）',
+              decoration: InputDecoration(
+                hintText: widget.isEditMode
+                    ? 'レビューを修正してください'
+                    : '施設の感想をお書きください（10文字以上）',
                 alignLabelWithHint: true,
               ),
               validator: (v) {
@@ -156,7 +212,7 @@ class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
             ),
             const SizedBox(height: 16),
 
-            // ── 投稿ボタン ────────────────────────────────────────────
+            // ── 送信ボタン（投稿 / 更新で切り替え）──────────────────────
             ElevatedButton(
               onPressed: isLoading ? null : _submit,
               child: isLoading
@@ -166,7 +222,7 @@ class _ReviewBottomSheetState extends ConsumerState<ReviewBottomSheet> {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white),
                     )
-                  : const Text('投稿する'),
+                  : Text(widget.isEditMode ? '更新する' : '投稿する'),
             ),
           ],
         ),

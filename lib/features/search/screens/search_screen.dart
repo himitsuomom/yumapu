@@ -45,9 +45,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // ── Filter helpers ────────────────────────────────────────────────────────
 
   /// フィルター条件（page除く）を文字列キーにする。
-  /// 検索ワード・種別・アメニティ・ソート・営業中フラグが変わったら変わる。
+  /// 検索ワード・種別・アメニティ・ソート・営業中フラグ・都道府県が変わったら変わる。
   String _filterKey(FacilitySearchParams p) =>
-      '${p.searchQuery}|${p.facilityTypeId}|${p.amenityIds.join(",")}|${p.sortBy}|${p.isOpenNow}';
+      '${p.searchQuery}|${p.facilityTypeId}|${p.amenityIds.join(",")}|${p.sortBy}|${p.isOpenNow}|${p.prefectureId}';
 
   /// テキスト入力中にリアルタイムで呼ばれる。400ms のdebounce後に検索する。
   /// debounce = ユーザーが入力を止めてから少し待って検索することで、
@@ -84,6 +84,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           // null（「すべて」チップ）は clearFacilityType:true でリセット
           ? p.copyWith(clearFacilityType: true, page: 0)
           : p.copyWith(facilityTypeId: typeId, page: 0),
+    );
+  }
+
+  /// 都道府県フィルターを変更する。
+  /// null を渡すと「全国」（フィルターなし）に戻る。
+  void _onPrefectureChanged(String? prefectureId) {
+    ref.read(facilitySearchParamsProvider.notifier).update(
+      (p) => prefectureId == null
+          ? p.copyWith(clearPrefecture: true, page: 0)
+          : p.copyWith(prefectureId: prefectureId, page: 0),
+    );
+  }
+
+  /// 都道府県選択ボトムシートを表示する。
+  /// ユーザーが選択すると [_onPrefectureChanged] を呼ぶ。
+  Future<void> _showPrefecturePicker(String? currentPrefectureId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => _PrefecturePickerSheet(
+        currentPrefectureId: currentPrefectureId,
+        onSelected: (id) {
+          Navigator.of(ctx).pop();
+          _onPrefectureChanged(id);
+        },
+      ),
     );
   }
 
@@ -142,7 +171,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         params.facilityTypeId != null ||
         params.amenityIds.isNotEmpty ||
         params.sortBy != FacilitySortBy.qualityScore ||
-        params.isOpenNow;
+        params.isOpenNow ||
+        params.prefectureId != null;
 
     // フィルター条件が変わったら蓄積リストをリセットする。
     // ページ番号変更だけなら蓄積リストに追記する（「もっと見る」）。
@@ -249,6 +279,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onAmenityToggled: _onAmenityToggled,
             isOpenNow: params.isOpenNow,
             onOpenNowChanged: _onOpenNowChanged,
+          ),
+          // ── Prefecture filter chip ────────────────────────────────────
+          // 都道府県フィルター。タップするとボトムシートで都道府県一覧を表示する。
+          // 選択中の場合はチップに都道府県名を表示し、ピンアイコンで強調する。
+          _PrefectureFilterChip(
+            currentPrefectureId: params.prefectureId,
+            onTap: () => _showPrefecturePicker(params.prefectureId),
+            onClear: () => _onPrefectureChanged(null),
           ),
           // ── Sort chips（UX-V9-4 + UX-V11-1対応）──────────────────────
           // 検索結果の並び順を「品質順」「名前順」「距離順」から選べる。
@@ -420,6 +458,277 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _searchController.dispose();
     super.dispose();
   }
+}
+
+// ── 都道府県フィルターチップ ─────────────────────────────────────────────────────
+
+/// 検索画面に表示する都道府県フィルターのコンパクトな行。
+/// - 未選択: 「都道府県を選ぶ」 グレーチップ → タップでピッカーを開く
+/// - 選択中: 「東京都」 カラーチップ + 「×」ボタン → × でリセット / チップタップで変更
+class _PrefectureFilterChip extends ConsumerWidget {
+  const _PrefectureFilterChip({
+    required this.currentPrefectureId,
+    required this.onTap,
+    required this.onClear,
+  });
+
+  final String? currentPrefectureId;
+  final VoidCallback onTap;   // チップタップ → ピッカーを開く
+  final VoidCallback onClear; // × ボタン → フィルターをリセット
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefecturesAsync = ref.watch(prefectureOptionsProvider);
+
+    return prefecturesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (prefectures) {
+        if (prefectures.isEmpty) return const SizedBox.shrink();
+
+        // 選択中の都道府県名を取得する（IDから名前に変換）
+        final selectedName = currentPrefectureId == null
+            ? null
+            : prefectures
+                .where((p) => p.id == currentPrefectureId)
+                .map((p) => p.name)
+                .firstOrNull;
+        final isSelected = currentPrefectureId != null;
+        final colorScheme = Theme.of(context).colorScheme;
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.place_outlined, size: 16, color: Colors.grey),
+              const SizedBox(width: 6),
+              const Text(
+                'エリア:',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(width: 8),
+              // メインチップ: 未選択 = グレー, 選択中 = プライマリカラー
+              ActionChip(
+                avatar: Icon(
+                  Icons.place,
+                  size: 14,
+                  color: isSelected ? colorScheme.onPrimary : colorScheme.primary,
+                ),
+                label: Text(
+                  isSelected ? (selectedName ?? '都道府県') : '都道府県を選ぶ',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface,
+                  ),
+                ),
+                backgroundColor: isSelected
+                    ? colorScheme.primary
+                    : colorScheme.surfaceContainerHighest,
+                // 選択済み・未選択どちらもタップでピッカーを開く（変更も可能）
+                onPressed: onTap,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              // 選択中のとき「×」クリアボタンを横に表示する
+              if (isSelected) ...[
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: onClear,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.cancel,
+                      size: 18,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── 都道府県ピッカーボトムシート ──────────────────────────────────────────────────
+
+/// 都道府県一覧をボトムシートで表示する。
+/// 「全国」(null) + 47都道府県を地域別に区切り線を入れて表示する。
+class _PrefecturePickerSheet extends ConsumerWidget {
+  const _PrefecturePickerSheet({
+    required this.currentPrefectureId,
+    required this.onSelected,
+  });
+
+  final String? currentPrefectureId;
+
+  /// 都道府県IDを引数として呼ばれる。null は「全国」を意味する。
+  final void Function(String? id) onSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefecturesAsync = ref.watch(prefectureOptionsProvider);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (ctx, scrollController) {
+        return Column(
+          children: [
+            // ── ドラッグハンドル ────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // ── タイトル ────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  Text(
+                    '都道府県を選ぶ',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // ── 都道府県リスト ─────────────────────────────────────────────
+            Expanded(
+              child: prefecturesAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('読み込みエラー: $e')),
+                data: (prefectures) {
+                  // 「全国」オプション + 47都道府県を地域でグループ分けして表示する。
+                  // 地域の順番: 北海道→東北→関東→中部→近畿→中国→四国→九州・沖縄
+                  final regions = <String>[
+                    '北海道', '東北', '関東', '中部', '近畿', '中国', '四国', '九州・沖縄',
+                  ];
+
+                  // 地域別にグループ化する
+                  final byRegion = <String, List<PrefectureOption>>{};
+                  final noRegion = <PrefectureOption>[];
+                  for (final p in prefectures) {
+                    if (p.region != null && regions.contains(p.region)) {
+                      byRegion.putIfAbsent(p.region!, () => []).add(p);
+                    } else {
+                      noRegion.add(p);
+                    }
+                  }
+
+                  // 表示するアイテムリスト（ヘッダーと施設をフラットにまとめる）
+                  final items = <_ListItem>[];
+
+                  // 「全国」行（フィルターをクリアする）
+                  items.add(_PrefectureItem(null, '全国（絞り込みなし）'));
+
+                  // 地域別グループを順番通りに追加する
+                  for (final region in regions) {
+                    final group = byRegion[region];
+                    if (group == null || group.isEmpty) continue;
+                    items.add(_RegionHeader(region));
+                    for (final p in group) {
+                      items.add(_PrefectureItem(p.id, p.name));
+                    }
+                  }
+
+                  // 地域未設定の都道府県（DBデータが不完全な場合の安全網）
+                  if (noRegion.isNotEmpty) {
+                    items.add(const _RegionHeader('その他'));
+                    for (final p in noRegion) {
+                      items.add(_PrefectureItem(p.id, p.name));
+                    }
+                  }
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    itemCount: items.length,
+                    itemBuilder: (_, i) {
+                      final item = items[i];
+                      if (item is _RegionHeader) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                          child: Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        );
+                      }
+                      final prefItem = item as _PrefectureItem;
+                      final isSelected = prefItem.id == currentPrefectureId ||
+                          (prefItem.id == null && currentPrefectureId == null);
+                      return ListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 20),
+                        title: Text(
+                          prefItem.label,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(
+                                Icons.check,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.primary,
+                              )
+                            : null,
+                        onTap: () => onSelected(prefItem.id),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── ピッカー内部用の sealed リスト項目 ────────────────────────────────────────
+
+/// ピッカーリストのアイテム基底クラス（ヘッダー or 都道府県行）
+sealed class _ListItem {}
+
+class _RegionHeader extends _ListItem {
+  final String label;
+  const _RegionHeader(this.label);
+}
+
+class _PrefectureItem extends _ListItem {
+  final String? id; // null = 「全国」
+  final String label;
+  const _PrefectureItem(this.id, this.label);
 }
 
 // ── ソートチップ ──────────────────────────────────────────────────────────────

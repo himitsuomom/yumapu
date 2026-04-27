@@ -3,6 +3,10 @@
 // 投稿フィード画面
 // ユーザーの投稿（温泉レポート）を新しい順で表示する。
 // いいね・プルリフレッシュ・新規投稿ボタンを提供する。
+//
+// 施設絞り込み機能（UX-V15-2）:
+//   施設タグをタップするとその施設の投稿だけ絞り込み表示する。
+//   絞り込み中はヘッダーにフィルターチップを表示し、タップで解除できる。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +26,13 @@ class FeedScreen extends ConsumerStatefulWidget {
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
   final _scrollController = ScrollController();
+
+  /// 施設絞り込みフィルター。null = 絞り込みなし（全件表示）。
+  /// 施設タグをタップすると設定され、フィルターチップの × で解除する。
+  String? _facilityFilter;
+
+  /// 施設絞り込み中の施設ID（施設詳細へのナビゲーション用）。
+  String? _facilityFilterId;
 
   @override
   void initState() {
@@ -48,6 +59,28 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
+  /// 施設絞り込みを設定する。すでに同じ施設なら解除する（トグル）。
+  void _setFacilityFilter(String facilityName, String facilityId) {
+    setState(() {
+      if (_facilityFilter == facilityName) {
+        // 同じ施設をタップしたら解除
+        _facilityFilter = null;
+        _facilityFilterId = null;
+      } else {
+        _facilityFilter = facilityName;
+        _facilityFilterId = facilityId;
+      }
+    });
+  }
+
+  /// 施設絞り込みを解除する。
+  void _clearFacilityFilter() {
+    setState(() {
+      _facilityFilter = null;
+      _facilityFilterId = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isSignedIn = ref.watch(isSignedInProvider);
@@ -60,31 +93,91 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         // 投稿ボタンは FAB だけに統一。AppBar のアイコンは削除。
       ),
       body: feedAsync.when(
-        data: (posts) {
-          if (posts.isEmpty) {
+        data: (allPosts) {
+          // 施設絞り込みが有効な場合はローカルフィルタリングを適用する
+          final posts = _facilityFilter == null
+              ? allPosts
+              : allPosts
+                  .where((p) => p.facilityName == _facilityFilter)
+                  .toList();
+
+          if (allPosts.isEmpty) {
             return const _EmptyFeedView();
           }
-          return RefreshIndicator(
-            onRefresh: () async {
-              ref.read(postFeedProvider.notifier).load();
-            },
-            child: ListView.separated(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              // hasMore=true なら末尾にローディング行を追加
-              itemCount: posts.length + (notifier.hasMore ? 1 : 0),
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                if (index == posts.length) {
-                  // 末尾ローディングインジケーター
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return _PostCard(post: posts[index]);
-              },
-            ),
+          return Column(
+            children: [
+              // ── 施設絞り込みチップ（絞り込み中のみ表示）──────────────────
+              if (_facilityFilter != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  color: const Color(0xFFF3E5F5),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.hot_tub,
+                          size: 14, color: Color(0xFF7B1FA2)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '$_facilityFilter の投稿を表示中',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF7B1FA2),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _clearFacilityFilter,
+                        child: const Icon(Icons.close,
+                            size: 16, color: Color(0xFF7B1FA2)),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // ── 投稿リスト ────────────────────────────────────────────
+              Expanded(
+                child: posts.isEmpty
+                    ? _FacilityEmptyView(
+                        facilityName: _facilityFilter ?? '',
+                        onClear: _clearFacilityFilter,
+                      )
+                    : RefreshIndicator(
+                        onRefresh: () async {
+                          ref.read(postFeedProvider.notifier).load();
+                        },
+                        child: ListView.separated(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          // 絞り込みなし + hasMore=true なら末尾にローディング行を追加
+                          itemCount: posts.length +
+                              (_facilityFilter == null && notifier.hasMore
+                                  ? 1
+                                  : 0),
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            if (index == posts.length) {
+                              // 末尾ローディングインジケーター
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child:
+                                    Center(child: CircularProgressIndicator()),
+                              );
+                            }
+                            return _PostCard(
+                              post: posts[index],
+                              activeFacilityFilter: _facilityFilter,
+                              onFacilityTap: _setFacilityFilter,
+                            );
+                          },
+                        ),
+                      ),
+              ),
+            ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -125,9 +218,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 // ── 投稿カード ────────────────────────────────────────────────────────────────
 
 class _PostCard extends ConsumerWidget {
-  const _PostCard({required this.post});
+  const _PostCard({
+    required this.post,
+    this.activeFacilityFilter,
+    this.onFacilityTap,
+  });
 
   final Post post;
+
+  /// 現在アクティブな施設フィルター名。施設タグのハイライト表示に使う。
+  final String? activeFacilityFilter;
+
+  /// 施設タグがタップされたときに呼ばれるコールバック（施設名, 施設ID）。
+  final void Function(String facilityName, String facilityId)? onFacilityTap;
 
   static final _dateFormat = DateFormat('yyyy/MM/dd HH:mm');
 
@@ -218,6 +321,11 @@ class _PostCard extends ConsumerWidget {
     // 現在のログインユーザーが投稿者かどうかを確認
     final isMyPost = session != null && session.user.id == post.userId;
 
+    // 施設タグがアクティブフィルターと一致するときハイライト表示する
+    final isFacilityFiltered =
+        activeFacilityFilter != null &&
+        post.facilityName == activeFacilityFilter;
+
     // 投稿日時をフォーマット（パースできなければ生の文字列を表示）
     String formattedTime;
     try {
@@ -304,34 +412,59 @@ class _PostCard extends ConsumerWidget {
           const SizedBox(height: 10),
 
           // ── 施設タグ ────────────────────────────────────────────────
+          // タップすると施設絞り込みフィルターを設定する（アクティブ時はハイライト）
           if (post.facilityName.isNotEmpty) ...[
             GestureDetector(
-              onTap: post.facilityId.isNotEmpty
-                  ? () => Navigator.of(context).pushNamed(
-                        '/facility',
-                        arguments: post.facilityId,
-                      )
+              onTap: post.facilityId.isNotEmpty && onFacilityTap != null
+                  ? () => onFacilityTap!(post.facilityName, post.facilityId)
                   : null,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE3F2FD),
+                  // アクティブフィルターと一致するときは紫系でハイライト
+                  color: isFacilityFiltered
+                      ? const Color(0xFFEDE7F6)
+                      : const Color(0xFFE3F2FD),
                   borderRadius: BorderRadius.circular(12),
+                  border: isFacilityFiltered
+                      ? Border.all(
+                          color: const Color(0xFF7B1FA2), width: 1)
+                      : null,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.hot_tub,
-                        size: 14, color: Color(0xFF1565C0)),
+                    Icon(
+                      Icons.hot_tub,
+                      size: 14,
+                      color: isFacilityFiltered
+                          ? const Color(0xFF7B1FA2)
+                          : const Color(0xFF1565C0),
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       post.facilityName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF1565C0),
+                        color: isFacilityFiltered
+                            ? const Color(0xFF7B1FA2)
+                            : const Color(0xFF1565C0),
                       ),
                     ),
+                    if (post.facilityId.isNotEmpty && onFacilityTap != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 2),
+                        child: Icon(
+                          isFacilityFiltered
+                              ? Icons.filter_alt
+                              : Icons.filter_alt_outlined,
+                          size: 12,
+                          color: isFacilityFiltered
+                              ? const Color(0xFF7B1FA2)
+                              : const Color(0xFF1565C0),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -520,6 +653,43 @@ class _EmptyFeedView extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 施設絞り込み中・該当投稿なし表示 ─────────────────────────────────────────
+
+/// 施設絞り込み中だが該当する投稿がない場合に表示するウィジェット。
+class _FacilityEmptyView extends StatelessWidget {
+  const _FacilityEmptyView({
+    required this.facilityName,
+    required this.onClear,
+  });
+
+  final String facilityName;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.search_off, size: 48, color: Color(0xFF9E9E9E)),
+          const SizedBox(height: 16),
+          Text(
+            '「$facilityName」の投稿はまだありません',
+            style: Theme.of(context).textTheme.titleSmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.clear),
+            label: const Text('絞り込みを解除'),
+            onPressed: onClear,
           ),
         ],
       ),

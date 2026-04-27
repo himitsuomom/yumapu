@@ -23,6 +23,7 @@ import 'package:yu_map/features/facility/screens/facility_detail_screen.dart'
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 
 // ── ソート列挙 ────────────────────────────────────────────────────────────────
 
@@ -309,17 +310,36 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                               ),
                             ),
                           ),
-                          // 「プランに追加」ポップアップメニュー
+                          // ポップアップメニュー: 「地図で見る」「プランに追加」
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert,
                                 color: Colors.grey, size: 20),
                             tooltip: 'メニュー',
                             onSelected: (value) {
-                              if (value == 'add_to_plan') {
+                              if (value == 'show_on_map') {
+                                // mapFlyToProvider に座標をセット → MapScreen がカメラを移動する
+                                ref.read(mapFlyToProvider.notifier).state = (
+                                  lat: facility.latitude,
+                                  lng: facility.longitude,
+                                );
+                                // homeTabIndexProvider を 0（地図タブ）に切り替える
+                                ref.read(homeTabIndexProvider.notifier).state =
+                                    0;
+                              } else if (value == 'add_to_plan') {
                                 showAddToPlanSheet(context, facility);
                               }
                             },
                             itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                value: 'show_on_map',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.map_outlined, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('地図で見る'),
+                                  ],
+                                ),
+                              ),
                               const PopupMenuItem(
                                 value: 'add_to_plan',
                                 child: Row(

@@ -165,10 +165,12 @@ class FacilitySearchParams {
     bool clearText = false,
     /// facilityTypeId を null にリセットしたい場合は true を渡す
     bool clearFacilityType = false,
+    /// prefectureId を null にリセットしたい場合は true を渡す
+    bool clearPrefecture = false,
   }) {
     return FacilitySearchParams(
       searchQuery: clearText ? null : searchQuery ?? this.searchQuery,
-      prefectureId: prefectureId ?? this.prefectureId,
+      prefectureId: clearPrefecture ? null : prefectureId ?? this.prefectureId,
       // clearFacilityType=true なら null、それ以外は渡した値 or 既存値
       facilityTypeId:
           clearFacilityType ? null : facilityTypeId ?? this.facilityTypeId,

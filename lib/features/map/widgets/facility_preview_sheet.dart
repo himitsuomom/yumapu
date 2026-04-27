@@ -128,6 +128,56 @@ class _FacilityPreviewSheetState
     );
     if (picked == null || !mounted) return;
 
+    // ── 確認ダイアログ ─────────────────────────────────────────────────────
+    // 画像を選んだあと、誤投稿を防ぐためプレビュー付きの確認ダイアログを表示する。
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('この写真を投稿しますか？'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 選択した画像のプレビュー
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                bytes,
+                height: 200,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.facility.name,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'この施設の写真として公開されます',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('投稿する'),
+          ),
+        ],
+      ),
+    );
+
+    // キャンセルまたはダイアログ外タップで終了する
+    if (confirmed != true || !mounted) return;
+
     setState(() => _isUploadingPhoto = true);
 
     try {
@@ -144,8 +194,7 @@ class _FacilityPreviewSheetState
       final fileName = '${const Uuid().v4()}.$safeExt';
       final storagePath = 'facilities/$facilityId/$fileName';
 
-      // バイト列を読み込んで Supabase Storage にアップロード
-      final bytes = await picked.readAsBytes();
+      // バイト列は確認ダイアログ表示前に読み込み済みなので再取得不要
       await client.storage.from('photos').uploadBinary(
             storagePath,
             bytes,

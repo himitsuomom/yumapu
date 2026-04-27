@@ -8,6 +8,7 @@ import 'package:yu_map/core/widgets/banner_ad_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/facility/screens/facility_report_screen.dart';
 import 'package:yu_map/features/facility/screens/owner_facility_edit_screen.dart';
 import 'package:yu_map/features/facility/screens/owner_registration_screen.dart';
@@ -43,10 +44,114 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   final PageController _headerPageController = PageController();
   int _headerPhotoIndex = 0;
 
+  // ── レビュー無限スクロール用ステート ──────────────────────────────────────
+
+  /// 累積済みレビューリスト（ページをまたいで追記していく）
+  final List<Review> _reviews = [];
+
+  /// 次に取得するページ番号（0始まり）
+  int _reviewPage = 0;
+
+  /// まだ次のページが存在するか（false になったら「もっと見る」を非表示）
+  bool _reviewHasMore = true;
+
+  /// 追加ロード中フラグ（二重リクエスト防止）
+  bool _reviewLoadingMore = false;
+
+  /// 初回ロード中フラグ（初期スピナー表示用）
+  bool _reviewInitialLoading = true;
+
+  /// 初回ロードエラーメッセージ（null なら正常）
+  String? _reviewError;
+
+  /// スクロール末尾検知用コントローラー
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    // 初回レビューを非同期ロード（initState 内で Future は OK）
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadReviews());
+  }
+
   @override
   void dispose() {
+    _scrollController.dispose();
     _headerPageController.dispose();
     super.dispose();
+  }
+
+  // ── レビュー無限スクロール メソッド ──────────────────────────────────────
+
+  /// スクロール位置を監視し、末尾 200px 以内に達したら追加ロードを起動する。
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200 &&
+        !_reviewLoadingMore &&
+        _reviewHasMore) {
+      _fetchReviewPage(_reviewPage);
+    }
+  }
+
+  /// レビューを最初から読み直す（投稿・削除後のリフレッシュ用）。
+  Future<void> _loadReviews() async {
+    if (!mounted) return;
+    setState(() {
+      _reviews.clear();
+      _reviewPage = 0;
+      _reviewHasMore = true;
+      _reviewInitialLoading = true;
+      _reviewError = null;
+    });
+    await _fetchReviewPage(0);
+    if (mounted) setState(() => _reviewInitialLoading = false);
+  }
+
+  /// 指定ページのレビューを Supabase から取得し [_reviews] に追記する。
+  Future<void> _fetchReviewPage(int page) async {
+    if (_reviewLoadingMore) return;
+    if (!mounted) return;
+
+    setState(() => _reviewLoadingMore = true);
+
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) {
+      if (mounted) setState(() => _reviewLoadingMore = false);
+      return;
+    }
+
+    final from = page * AppConstants.pageSize;
+    final to = from + AppConstants.pageSize - 1;
+
+    try {
+      final rows = await client
+          .from('reviews')
+          .select('*, users!user_id(display_name, avatar_url, is_premium)')
+          .eq('facility_id', widget.facilityId)
+          .order('created_at', ascending: false)
+          .range(from, to) as List;
+
+      if (!mounted) return;
+
+      final newReviews =
+          rows.map((r) => Review.fromJson(r as Map<String, dynamic>)).toList();
+
+      setState(() {
+        _reviews.addAll(newReviews);
+        _reviewHasMore = newReviews.length == AppConstants.pageSize;
+        _reviewPage = page + 1;
+        _reviewLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _reviewLoadingMore = false;
+        // 最初のページだけエラーを表示する（追加ページは静かに失敗）
+        if (page == 0) _reviewError = e.toString();
+      });
+    }
   }
 
   // ── URL helpers ───────────────────────────────────────────────────────────
@@ -152,7 +257,8 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       builder: (_) => ReviewBottomSheet(
         facilityId: facility.id,
         onSubmitted: () {
-          ref.invalidate(reviewListProvider(facility.id));
+          // 投稿後はレビューをページ先頭から読み直す
+          _loadReviews();
           // 統合プロバイダーを invalidate してカウント・平均を再取得
           ref.invalidate(facilityReviewSummaryProvider(facility.id));
         },
@@ -208,7 +314,6 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   Widget _buildScaffold(Facility facility) {
     final isSignedIn = ref.watch(isSignedInProvider);
     final isFavorite = ref.watch(isFavoriteProvider(facility.id));
-    final reviewAsync = ref.watch(reviewListProvider(facility.id));
     // UX-V8-9: ログイン中のみいいね済みIDを取得してトグル表示に使う
     final likedIds = isSignedIn
         ? ref.watch(likedReviewIdsProvider(facility.id)).valueOrNull ?? {}
@@ -218,6 +323,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
 
     return Scaffold(
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           // ── Photo carousel / Map header ────────────────────────────────
           // UX-V11-3: 写真がある場合はカルーセル、ない場合は地図を表示する。
@@ -567,81 +673,128 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
             ),
           ),
 
-          // ── Review list ────────────────────────────────────────────────
-          reviewAsync.when(
-            data: (reviews) {
-              if (reviews.isEmpty) {
-                return const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: Text('まだレビューはありません')),
-                  ),
-                );
-              }
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) {
-                    final reviewId = reviews[i].id;
-                    final alreadyLiked = likedIds.contains(reviewId);
-                    // 自分のレビューかどうかを確認して削除ボタンを表示する
-                    final isOwner = currentUserId != null &&
-                        reviews[i].userId == currentUserId;
-                    return ReviewCard(
-                      review: reviews[i],
-                      isLiked: alreadyLiked,
-                      onLike: isSignedIn && !alreadyLiked
-                          ? () async {
-                              await ref
-                                  .read(reviewNotifierProvider.notifier)
-                                  .likeReview(reviewId);
-                              // いいね後にプロバイダーを再取得してUIを更新する
-                              ref.invalidate(
-                                  likedReviewIdsProvider(facility.id));
-                              ref.invalidate(reviewListProvider(facility.id));
-                            }
-                          : null,
-                      onUnlike: isSignedIn && alreadyLiked
-                          ? () async {
-                              await ref
-                                  .read(reviewNotifierProvider.notifier)
-                                  .unlikeReview(reviewId);
-                              ref.invalidate(
-                                  likedReviewIdsProvider(facility.id));
-                              ref.invalidate(reviewListProvider(facility.id));
-                            }
-                          : null,
-                      // 自分のレビューのみ削除ボタンを表示する
-                      onDelete: isOwner
-                          ? () async {
-                              await ref
-                                  .read(reviewNotifierProvider.notifier)
-                                  .deleteReview(reviewId);
-                              // 削除後にレビュー一覧と集計を再取得する
-                              ref.invalidate(reviewListProvider(facility.id));
-                              ref.invalidate(
-                                  facilityReviewSummaryProvider(facility.id));
-                            }
-                          : null,
-                    );
-                  },
-                  childCount: reviews.length,
-                ),
-              );
-            },
-            loading: () => const SliverToBoxAdapter(
+          // ── Review list（無限スクロール）─────────────────────────────
+          // _reviewInitialLoading が true の間はスピナーを表示する。
+          // エラーは初回ロード時のみ表示する（追加ページのエラーは無視）。
+          // スクロールは CustomScrollView の controller: _scrollController で
+          // _onScroll() がリッスンし、末尾 200px 以内で次ページを自動ロードする。
+          if (_reviewInitialLoading)
+            const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: CircularProgressIndicator()),
               ),
-            ),
-            error: (e, _) => SliverToBoxAdapter(
+            )
+          else if (_reviewError != null)
+            SliverToBoxAdapter(
               child: AppErrorWidget(
-                message: e.toString(),
-                onRetry: () =>
-                    ref.invalidate(reviewListProvider(facility.id)),
+                message: _reviewError!,
+                onRetry: _loadReviews,
+              ),
+            )
+          else if (_reviews.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: Text('まだレビューはありません')),
+              ),
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final reviewId = _reviews[i].id;
+                  final alreadyLiked = likedIds.contains(reviewId);
+                  // 自分のレビューかどうかを確認して削除ボタンを表示する
+                  final isOwner = currentUserId != null &&
+                      _reviews[i].userId == currentUserId;
+                  return ReviewCard(
+                    review: _reviews[i],
+                    isLiked: alreadyLiked,
+                    onLike: isSignedIn && !alreadyLiked
+                        ? () async {
+                            await ref
+                                .read(reviewNotifierProvider.notifier)
+                                .likeReview(reviewId);
+                            // いいね後はトグル状態だけ更新し、リスト全体は再ロードしない
+                            ref.invalidate(
+                                likedReviewIdsProvider(facility.id));
+                          }
+                        : null,
+                    onUnlike: isSignedIn && alreadyLiked
+                        ? () async {
+                            await ref
+                                .read(reviewNotifierProvider.notifier)
+                                .unlikeReview(reviewId);
+                            ref.invalidate(
+                                likedReviewIdsProvider(facility.id));
+                          }
+                        : null,
+                    // 自分のレビューのみ編集・削除ボタンを表示する
+                    onEdit: isOwner
+                        ? () async {
+                            // 編集ボトムシートを開く（既存の内容・評価を渡す）
+                            await showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              builder: (_) => ReviewBottomSheet(
+                                facilityId: widget.facilityId,
+                                existingReviewId: reviewId,
+                                existingContent: _reviews[i].content,
+                                existingRating: _reviews[i].rating,
+                                onSubmitted: () {
+                                  // 編集後はリストをページ先頭から読み直す
+                                  _loadReviews();
+                                  ref.invalidate(
+                                      facilityReviewSummaryProvider(
+                                          facility.id));
+                                },
+                              ),
+                            );
+                          }
+                        : null,
+                    onDelete: isOwner
+                        ? () async {
+                            await ref
+                                .read(reviewNotifierProvider.notifier)
+                                .deleteReview(reviewId);
+                            // 削除後はリストをページ先頭から読み直す
+                            _loadReviews();
+                            ref.invalidate(
+                                facilityReviewSummaryProvider(facility.id));
+                          }
+                        : null,
+                  );
+                },
+                childCount: _reviews.length,
               ),
             ),
-          ),
+
+          // ── 追加ロード中スピナー / 全件表示済みメッセージ ──────────────
+          if (!_reviewInitialLoading)
+            SliverToBoxAdapter(
+              child: _reviewLoadingMore
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : (!_reviewHasMore && _reviews.isNotEmpty)
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Center(
+                            child: Text(
+                              'すべてのレビューを表示しました（${_reviews.length}件）',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+            ),
 
           // ── Banner ad ──────────────────────────────────────────────────
           const SliverToBoxAdapter(
