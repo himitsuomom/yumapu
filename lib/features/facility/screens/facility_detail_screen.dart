@@ -7,6 +7,7 @@ import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/widgets/banner_ad_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
+import 'package:yu_map/core/widgets/photo_gallery_viewer.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/facility/screens/facility_report_screen.dart';
@@ -351,7 +352,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                       [];
 
                   if (photos.isNotEmpty) {
-                    // 写真カルーセル（PageView）
+                    // 写真カルーセル（PageView）+ タップでフルスクリーン表示
                     return Stack(
                       fit: StackFit.expand,
                       children: [
@@ -360,27 +361,36 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                           itemCount: photos.length,
                           onPageChanged: (i) =>
                               setState(() => _headerPhotoIndex = i),
-                          itemBuilder: (_, i) => Image.network(
-                            photos[i],
-                            fit: BoxFit.cover,
-                            // ネットワークエラー時はプレースホルダーを表示
-                            errorBuilder: (_, __, ___) => ColoredBox(
-                              color: Colors.grey.shade200,
-                              child: const Center(
-                                child: Icon(Icons.image_not_supported,
-                                    size: 48, color: Colors.grey),
-                              ),
+                          itemBuilder: (context, i) => GestureDetector(
+                            // タップすると PhotoGalleryViewer をフルスクリーンで表示する。
+                            // ピンチズーム・スワイプ操作が可能になる。
+                            onTap: () => PhotoGalleryViewer.show(
+                              context,
+                              photos: photos,
+                              initialIndex: _headerPhotoIndex,
                             ),
-                            loadingBuilder: (_, child, progress) =>
-                                progress == null
-                                    ? child
-                                    : ColoredBox(
-                                        color: Colors.grey.shade100,
-                                        child: const Center(
-                                          child: CircularProgressIndicator(
-                                              strokeWidth: 2),
+                            child: Image.network(
+                              photos[i],
+                              fit: BoxFit.cover,
+                              // ネットワークエラー時はプレースホルダーを表示
+                              errorBuilder: (_, __, ___) => ColoredBox(
+                                color: Colors.grey.shade200,
+                                child: const Center(
+                                  child: Icon(Icons.image_not_supported,
+                                      size: 48, color: Colors.grey),
+                                ),
+                              ),
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null
+                                      ? child
+                                      : ColoredBox(
+                                          color: Colors.grey.shade100,
+                                          child: const Center(
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          ),
                                         ),
-                                      ),
+                            ),
                           ),
                         ),
                         // 複数枚の場合のみページインジケーターを表示
@@ -410,7 +420,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                               ),
                             ),
                           ),
-                        // 写真枚数バッジ（右上）
+                        // 写真枚数バッジ + 拡大ヒント（右上）
                         Positioned(
                           top: 8,
                           right: 8,
@@ -424,7 +434,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.photo_library_outlined,
+                                const Icon(Icons.zoom_in,
                                     size: 12, color: Colors.white),
                                 const SizedBox(width: 4),
                                 Text(

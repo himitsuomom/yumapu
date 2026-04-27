@@ -60,9 +60,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   }
 
   /// 施設絞り込みを設定する。すでに同じ施設なら解除する（トグル）。
+  /// サーバーサイドフィルタリングに変更済み: setFacilityFilter() を呼んで
+  /// DB クエリ自体に facility_id フィルターを追加する。
   void _setFacilityFilter(String facilityName, String facilityId) {
+    final isSame = _facilityFilter == facilityName;
     setState(() {
-      if (_facilityFilter == facilityName) {
+      if (isSame) {
         // 同じ施設をタップしたら解除
         _facilityFilter = null;
         _facilityFilterId = null;
@@ -71,6 +74,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         _facilityFilterId = facilityId;
       }
     });
+    // サーバーサイドで絞り込み（null の場合は全件表示に戻る）
+    ref.read(postFeedProvider.notifier).setFacilityFilter(
+          isSame ? null : facilityId,
+        );
   }
 
   /// 施設絞り込みを解除する。
@@ -79,6 +86,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       _facilityFilter = null;
       _facilityFilterId = null;
     });
+    // サーバーサイドフィルターを解除して全件再取得
+    ref.read(postFeedProvider.notifier).setFacilityFilter(null);
   }
 
   @override
@@ -94,12 +103,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       ),
       body: feedAsync.when(
         data: (allPosts) {
-          // 施設絞り込みが有効な場合はローカルフィルタリングを適用する
-          final posts = _facilityFilter == null
-              ? allPosts
-              : allPosts
-                  .where((p) => p.facilityName == _facilityFilter)
-                  .toList();
+          // サーバーサイドフィルタリング済みのため、ローカルフィルタリング不要
+          final posts = allPosts;
 
           if (allPosts.isEmpty) {
             return const _EmptyFeedView();

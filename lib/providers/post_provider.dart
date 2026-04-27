@@ -34,6 +34,20 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
 
+  /// サーバーサイドの施設絞り込みフィルター（null = 全件）。
+  /// setFacilityFilter() で更新すると自動的に再取得する。
+  String? _facilityIdFilter;
+
+  /// 施設絞り込みフィルターを設定して再読み込みする。
+  ///
+  /// [facilityId] が null の場合は全件表示に戻す。
+  /// クライアントサイドフィルタリングと異なり、サーバーから
+  /// 施設IDに一致する投稿だけを取得するため、ページング精度が上がる。
+  Future<void> setFacilityFilter(String? facilityId) async {
+    _facilityIdFilter = facilityId;
+    await load();
+  }
+
   /// 最新 _pageSize 件の投稿を取得する（初回 / プルリフレッシュ）
   Future<void> load() async {
     final client = _ref.read(supabaseClientProvider);
@@ -48,9 +62,14 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
       final session = _ref.read(sessionProvider);
 
       // users テーブルを JOIN して投稿者の表示名・アバターを取得
-      final data = await client
+      // 施設IDフィルターが設定されている場合はサーバーサイドで絞り込む
+      var query = client
           .from('posts')
-          .select('*, users(display_name, username, avatar_url)')
+          .select('*, users(display_name, username, avatar_url)');
+      if (_facilityIdFilter != null) {
+        query = query.eq('facility_id', _facilityIdFilter!);
+      }
+      final data = await query
           .order('created_at', ascending: false)
           .limit(_pageSize);
 
@@ -99,10 +118,15 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
       // 末尾投稿の created_at より古い投稿を取得（カーソル）
       final lastCreatedAt = current.last.time;
 
-      final data = await client
+      // 施設IDフィルターが設定されている場合はサーバーサイドで絞り込む
+      var moreQuery = client
           .from('posts')
           .select('*, users(display_name, username, avatar_url)')
-          .lt('created_at', lastCreatedAt)
+          .lt('created_at', lastCreatedAt);
+      if (_facilityIdFilter != null) {
+        moreQuery = moreQuery.eq('facility_id', _facilityIdFilter!);
+      }
+      final data = await moreQuery
           .order('created_at', ascending: false)
           .limit(_pageSize);
 

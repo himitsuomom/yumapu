@@ -17,6 +17,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:yu_map/domain/entities/facility.dart';
+import 'package:yu_map/core/widgets/photo_gallery_viewer.dart';
 import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
 import 'package:yu_map/providers/auth_provider.dart';
@@ -781,30 +782,39 @@ class _FacilityPreviewSheetState
       height: 210,
       child: Stack(
         children: [
-          // スワイプできる写真一覧
+          // スワイプできる写真一覧（タップでフルスクリーン表示）
           PageView.builder(
             itemCount: urls.length,
             onPageChanged: (i) =>
                 setState(() => _currentPhotoIndex = i),
             itemBuilder: (context, index) {
-              return CachedNetworkImage(
-                imageUrl: urls[index],
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
-                  color: typeColor.withValues(alpha: 0.08),
-                  child: Center(
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: typeColor),
+              return GestureDetector(
+                // タップすると PhotoGalleryViewer をフルスクリーンで開く。
+                // ピンチズーム・スワイプ操作が可能になる。
+                onTap: () => PhotoGalleryViewer.show(
+                  context,
+                  photos: urls,
+                  initialIndex: _currentPhotoIndex,
+                ),
+                child: CachedNetworkImage(
+                  imageUrl: urls[index],
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    color: typeColor.withValues(alpha: 0.08),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: typeColor),
+                      ),
                     ),
                   ),
-                ),
-                errorWidget: (_, __, ___) => Container(
-                  color: Colors.grey[100],
-                  child: Icon(Icons.broken_image,
-                      color: Colors.grey[400], size: 36),
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.grey[100],
+                    child: Icon(Icons.broken_image,
+                        color: Colors.grey[400], size: 36),
+                  ),
                 ),
               );
             },

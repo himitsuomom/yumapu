@@ -12,12 +12,14 @@
 //   - マーカータップ → FacilityPreviewSheet（ボトムシート）を表示
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/domain/entities/facility.dart';
@@ -266,11 +268,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   /// Enter キー押下時に即座に検索する（debounce をスキップ）。
+  /// 地名が含まれる場合は Nominatim でジオコーディングして地図を移動する。
   void _onSearchSubmitted(String query) {
     _searchDebounce?.cancel();
-    _applySearch(query);
+    _applySearchWithGeocoding(query);
   }
 
+  /// 通常の施設名検索（リアルタイム入力用）。
+  /// ジオコーディングはしない（重い処理のため入力中は行わない）。
   void _applySearch(String query) {
     final trimmed = query.trim();
     ref.read(mapSearchParamsProvider.notifier).update(
@@ -278,6 +283,90 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               ? p.copyWith(clearText: true, page: 0)
               : p.copyWith(searchQuery: trimmed, page: 0),
         );
+  }
+
+  /// 施設名検索 + Nominatim ジオコーディングを組み合わせた検索。
+  /// Enter キー押下時にのみ実行する（ネットワークコストを抑えるため）。
+  ///
+  /// 動作フロー:
+  ///   1. まず施設名フィルターを適用（即座にDBクエリ実行）
+  ///   2. 並行して Nominatim API で日本国内の地名を検索
+  ///   3. 地名が見つかったら地図カメラをその座標に移動し、周辺施設を再検索
+  ///   4. 地名が見つからなければ施設名フィルターのみ（従来の動作）
+  Future<void> _applySearchWithGeocoding(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      ref.read(mapSearchParamsProvider.notifier).update(
+            (p) => p.copyWith(clearText: true, page: 0),
+          );
+      return;
+    }
+
+    // ステップ1: 施設名フィルターをまず適用（即座にレスポンス）
+    ref.read(mapSearchParamsProvider.notifier).update(
+          (p) => p.copyWith(searchQuery: trimmed, page: 0),
+        );
+
+    // ステップ2: Nominatim で地名検索（日本国内限定）
+    final location = await _geocodeJapan(trimmed);
+    if (!mounted) return;
+    if (location == null) return; // 地名なし → 施設名フィルターのみで終了
+
+    // ステップ3: 地図カメラを地名座標に移動して周辺施設を再検索
+    final target = LatLng(location.$1, location.$2);
+    _mapController.move(target, 13);
+    _lastSearchCenter = target;
+    _lastSearchZoom = 13;
+
+    ref.read(mapSearchParamsProvider.notifier).update(
+          (p) => p.copyWith(
+            latitude: location.$1,
+            longitude: location.$2,
+            radiusMeters: 10000, // 地名検索は広めの10kmで探す
+            page: 0,
+          ),
+        );
+  }
+
+  /// Nominatim API（OpenStreetMap の無料ジオコーダー）で日本国内の地名を検索する。
+  ///
+  /// 返り値: (latitude, longitude) のレコード。地名が見つからない場合は null。
+  /// API制限: 1秒1リクエスト（ユーザー操作のEnter押下なので問題なし）。
+  Future<(double, double)?> _geocodeJapan(String query) async {
+    try {
+      final uri = Uri.https(
+        'nominatim.openstreetmap.org',
+        '/search',
+        {
+          'q': query,
+          'format': 'json',
+          'limit': '1',
+          'countrycodes': 'jp', // 日本国内に限定
+          'accept-language': 'ja',
+        },
+      );
+      final response = await http.get(
+        uri,
+        headers: {
+          // Nominatim の利用規約: User-Agent の指定が必須
+          'User-Agent': 'YuMap/1.0 (com.yumap.app; contact: yumap@example.com)',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode != 200) return null;
+      final List<dynamic> results = jsonDecode(response.body) as List<dynamic>;
+      if (results.isEmpty) return null;
+
+      final first = results.first as Map<String, dynamic>;
+      final lat = double.tryParse(first['lat'] as String? ?? '');
+      final lon = double.tryParse(first['lon'] as String? ?? '');
+      if (lat == null || lon == null) return null;
+
+      return (lat, lon);
+    } catch (_) {
+      // ネットワークエラー・タイムアウトは無視して施設名フィルターのみで継続
+      return null;
+    }
   }
 
   // ── マーカー更新 ─────────────────────────────────────────────────────────
