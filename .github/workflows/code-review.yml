@@ -166,3 +166,31 @@ jobs:
 
       - name: テストを実行
         run: flutter test
+
+  file_size_check:
+    name: ファイル行数チェック
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: 500行超のDartファイルを検出
+        run: |
+          echo "=== 500行超のDartファイル ==="
+          found=0
+          while IFS= read -r file; do
+            lines=$(wc -l < "$file")
+            if [ "$lines" -gt 500 ]; then
+              echo "::warning file=$file,title=ファイル行数超過::${file} は ${lines} 行です（上限: 500行）"
+              found=1
+            fi
+          done < <(find lib -name "*.dart" -type f)
+          if [ "$found" -eq 1 ]; then
+            echo ""
+            echo "⚠️  500行を超えるファイルが見つかりました。分割を検討してください。"
+          else
+            echo "✅ 全ファイルが500行以下です"
+          fi

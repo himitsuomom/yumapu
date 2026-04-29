@@ -126,11 +126,22 @@ class FilterBar extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // ── Facility type + "今日営業中" row ──────────────────────────────
+        // UX-V28-2: 「今日営業中」チップを施設タイプより先頭に配置。
+        // 以前は施設タイプ一覧の末尾に置かれていたため、スクロールしないと見えない
+        // 可能性があった。最も便利なフィルターを即座に使えるよう先頭に移動した。
         typesAsync.when(
           data: (types) {
             if (types.isEmpty) return const SizedBox.shrink();
             return _ChipRow(
               children: [
+                // ── 「今日営業中」チップ（先頭に配置して視認性向上）────────────
+                if (onOpenNowChanged != null)
+                  FilterChip(
+                    avatar: const Icon(Icons.access_time, size: 16),
+                    label: const Text('今日営業中'),
+                    selected: isOpenNow,
+                    onSelected: onOpenNowChanged,
+                  ),
                 // "すべて" chip clears the facility type filter
                 FilterChip(
                   label: const Text('すべて'),
@@ -143,15 +154,6 @@ class FilterBar extends ConsumerWidget {
                       onSelected: (selected) =>
                           onFacilityTypeChanged(selected ? t.id : null),
                     )),
-                // ── 「今日営業中」チップ ────────────────────────────────
-                // onOpenNowChanged が設定されているときだけ表示する
-                if (onOpenNowChanged != null)
-                  FilterChip(
-                    avatar: const Icon(Icons.access_time, size: 16),
-                    label: const Text('今日営業中'),
-                    selected: isOpenNow,
-                    onSelected: onOpenNowChanged,
-                  ),
               ],
             );
           },
