@@ -71,7 +71,7 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
           .single();
 
       state = const AsyncData(null);
-      return OnsenPlan.fromJson(data as Map<String, dynamic>);
+      return OnsenPlan.fromJson(data);
     } catch (e, st) {
       state = AsyncError(e, st);
       return null;
