@@ -39,6 +39,78 @@ from datetime import datetime
 import requests
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Nominatim 逆ジオコーディング
+# ─────────────────────────────────────────────────────────────────────────────
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_USER_AGENT = "yumapu-import/1.0 (himitsuomom; educational use)"
+NOMINATIM_RATE_LIMIT = 1.1  # 秒（Nominatim 利用規約: 1 req/sec 以下）
+
+_geocode_cache: dict[tuple, Optional[str]] = {}
+_last_nominatim_call = 0.0
+
+
+def reverse_geocode(lat: float, lng: float) -> Optional[str]:
+    """
+    Nominatim 逆ジオコーディングで緯度経度→日本語住所を返す。
+    Nominatim 利用規約に従い 1 req/sec 以下に制限する。
+    """
+    global _last_nominatim_call
+
+    # 小数点4桁で丸めてキャッシュ（~11m 精度、同エリアの重複リクエストを避ける）
+    cache_key = (round(lat, 4), round(lng, 4))
+    if cache_key in _geocode_cache:
+        return _geocode_cache[cache_key]
+
+    # レート制限
+    elapsed = time.time() - _last_nominatim_call
+    if elapsed < NOMINATIM_RATE_LIMIT:
+        time.sleep(NOMINATIM_RATE_LIMIT - elapsed)
+
+    try:
+        resp = requests.get(
+            NOMINATIM_URL,
+            params={
+                "format": "json",
+                "lat": lat,
+                "lon": lng,
+                "accept-language": "ja",
+                "zoom": 18,
+            },
+            headers={"User-Agent": NOMINATIM_USER_AGENT},
+            timeout=10,
+        )
+        _last_nominatim_call = time.time()
+        resp.raise_for_status()
+        data = resp.json()
+
+        addr = data.get("address", {})
+        parts = []
+        # 日本の Nominatim では都道府県は province フィールド
+        pref = addr.get("province") or addr.get("state") or addr.get("prefecture")
+        if pref:
+            parts.append(pref)
+        city = addr.get("city") or addr.get("town") or addr.get("village")
+        if city:
+            parts.append(city)
+        suburb = addr.get("suburb") or addr.get("quarter") or addr.get("neighbourhood")
+        if suburb:
+            parts.append(suburb)
+        if addr.get("road"):
+            parts.append(addr["road"])
+        if addr.get("house_number"):
+            parts.append(addr["house_number"])
+
+        result = "".join(parts) if parts else None
+        _geocode_cache[cache_key] = result
+        return result
+
+    except Exception as e:
+        logger.debug(f"Nominatim エラー ({lat},{lng}): {e}")
+        _last_nominatim_call = time.time()
+        _geocode_cache[cache_key] = None
+        return None
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ロギング設定
 # ─────────────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -172,7 +244,7 @@ def fetch_overpass(facility_type: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 # OSM → Supabase レコード変換
 # ─────────────────────────────────────────────────────────────────────────────
-def osm_element_to_record(element: dict, facility_type: str) -> Optional[dict]:
+def osm_element_to_record(element: dict, facility_type: str, use_geocode: bool = False) -> Optional[dict]:
     """OSM エレメントを Supabase facilities レコードに変換する。"""
     tags = element.get("tags", {})
 
@@ -195,8 +267,10 @@ def osm_element_to_record(element: dict, facility_type: str) -> Optional[dict]:
     # OSM ID（重複防止）
     osm_id = f"{element['type'][0]}{element['id']}"  # n12345 / w12345
 
-    # 住所の組み立て
+    # 住所の組み立て（OSM タグ優先、なければ Nominatim 逆ジオコーディング）
     address = _build_address(tags)
+    if address is None and use_geocode:
+        address = reverse_geocode(lat, lng)
 
     # 電話番号（先頭の "+" や "-" も含む）
     phone = (
@@ -414,6 +488,11 @@ def main():
         action="store_true",
         help="Supabase に書き込まず、取得件数だけ表示する",
     )
+    parser.add_argument(
+        "--geocode",
+        action="store_true",
+        help="住所タグがない施設を Nominatim 逆ジオコーディングで補完する（処理が遅くなります）",
+    )
     args = parser.parse_args()
 
     # 環境変数から認証情報を読み込む
@@ -477,12 +556,14 @@ def main():
             continue
 
         # OSM → Supabase レコード変換
+        if args.geocode:
+            logger.info("  住所補完モード: 住所なし施設を Nominatim で逆ジオコーディングします")
         records = []
         skipped = 0
         for element in elements:
             # node と way のみ処理（relation はスキップ）
             if element.get("type") in ("node", "way"):
-                rec = osm_element_to_record(element, facility_type)
+                rec = osm_element_to_record(element, facility_type, use_geocode=args.geocode)
                 if rec:
                     records.append(rec)
                 else:
