@@ -41,8 +41,22 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('年額プランに登録しました')),
       );
-    } catch (_) {
-      // Purchase cancelled or failed — no feedback needed
+    } catch (e) {
+      // PurchasesError の purchaseCancelledError はユーザーが意図してキャンセルしたため無視する。
+      // それ以外のエラー（ネットワーク切断・決済拒否等）はユーザーに通知する。
+      if (e is PurchasesError &&
+          e.code == PurchasesErrorCode.purchaseCancelledError) {
+        // キャンセルは正常フロー → 何もしない
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('購入に失敗しました。もう一度お試しください。'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
     } finally {
       if (mounted) setState(() => _annualLoading = false);
     }
@@ -341,6 +355,26 @@ class _PremiumActiveCard extends StatelessWidget {
             const Text(
               'すべてのプレミアム機能が利用できます',
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            // UX-58: 解約手順の案内（ストアガイドライン準拠）
+            // App Store / Google Play の管理画面から解約できることを明示する
+            const Text(
+              '解約について',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'サブスクリプションの解約は、ご利用のストアの管理画面から行えます。\n'
+              '• iOS: App Store → アカウント → サブスクリプション\n'
+              '• Android: Google Play → プロフィール → お支払いと定期購入',
+              style: TextStyle(fontSize: 12, color: Color(0xFF757575), height: 1.6),
+              textAlign: TextAlign.left,
             ),
           ],
         ),

@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/widgets/banner_ad_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
@@ -78,8 +79,9 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    // 初回レビューを非同期ロード（initState 内で Future は OK）
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadReviews());
+    if (AppConfig.isReviewEnabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadReviews());
+    }
   }
 
   @override
@@ -408,7 +410,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       // スクロールしてレビューを読んでいても常にチェックインできる。
       // UX-V27-2: ゲストモードでは「ログインしてチェックイン」を表示し、
       //           タップするとログイン誘導ダイアログが出る。
-      bottomNavigationBar: (isSignedIn || isGuestMode)
+      bottomNavigationBar: AppConfig.isCheckinEnabled && (isSignedIn || isGuestMode)
           ? _buildStickyCheckinBar(facility, isSignedIn)
           : null,
       body: CustomScrollView(
@@ -637,8 +639,6 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           ),
 
           // ── Action buttons (login only) ────────────────────────────────
-          // UX-V27-1: チェックインボタンはScaffold底部に固定済み（常に見える）。
-          // ここにはログイン後の補助アクション（レビュー・プラン追加）のみ残す。
           if (isSignedIn)
             SliverToBoxAdapter(
               child: Padding(
@@ -646,14 +646,16 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.rate_review_outlined),
-                        label: const Text('レビューを書く'),
-                        onPressed: () => _showReviewSheet(facility),
+                    if (AppConfig.isReviewEnabled) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.rate_review_outlined),
+                          label: const Text('レビューを書く'),
+                          onPressed: () => _showReviewSheet(facility),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     Expanded(
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.playlist_add_outlined),
@@ -746,37 +748,34 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           ),
 
           // ── Reviews header ─────────────────────────────────────────────
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Text(
-                'レビュー',
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold),
+          if (AppConfig.isReviewEnabled)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Text(
+                  'レビュー',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
-          ),
 
           // ── Review list（無限スクロール）─────────────────────────────
-          // _reviewInitialLoading が true の間はスピナーを表示する。
-          // エラーは初回ロード時のみ表示する（追加ページのエラーは無視）。
-          // スクロールは CustomScrollView の controller: _scrollController で
-          // _onScroll() がリッスンし、末尾 200px 以内で次ページを自動ロードする。
-          if (_reviewInitialLoading)
+          if (AppConfig.isReviewEnabled && _reviewInitialLoading)
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: CircularProgressIndicator()),
               ),
             )
-          else if (_reviewError != null)
+          else if (AppConfig.isReviewEnabled && _reviewError != null)
             SliverToBoxAdapter(
               child: AppErrorWidget(
                 message: _reviewError!,
                 onRetry: _loadReviews,
               ),
             )
-          else if (_reviews.isEmpty)
+          else if (AppConfig.isReviewEnabled && _reviews.isEmpty)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
@@ -828,7 +827,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                 ),
               ),
             )
-          else
+          else if (AppConfig.isReviewEnabled)
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (_, i) {

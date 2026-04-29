@@ -1,0 +1,94 @@
+{
+  "results": {
+    "onsen": {
+      "total": 513,
+      "name_missing": 0,
+      "name_missing_pct": 0.0,
+      "addr_missing": 460,
+      "addr_missing_pct": 89.7,
+      "coord_missing": 0,
+      "coord_missing_pct": 0.0,
+      "names_sample": [
+        "飯能駅前",
+        "飯能警察署入口",
+        "ことぶき温泉",
+        "北川温泉",
+        "東吾野",
+        "鉢形",
+        "男衾",
+        "河原湯",
+        "外湯 上寺湯",
+        "大湯"
+      ]
+    },
+    "public_bath": {
+      "total": 5179,
+      "name_missing": 0,
+      "name_missing_pct": 0.0,
+      "addr_missing": 4854,
+      "addr_missing_pct": 93.7,
+      "coord_missing": 0,
+      "coord_missing_pct": 0.0,
+      "names_sample": [
+        "湯快爽快みはま店",
+        "梅開湯",
+        "街道の湯",
+        "清水湯",
+        "下ん湯",
+        "大和湯",
+        "梅の湯",
+        "道の温泉駅かれん",
+        "湯パーク",
+        "鹿児島空港 天然温泉足湯おやっとさぁ"
+      ]
+    },
+    "sauna": {
+      "total": 811,
+      "name_missing": 0,
+      "name_missing_pct": 0.0,
+      "addr_missing": 811,
+      "addr_missing_pct": 100.0,
+      "coord_missing": 0,
+      "coord_missing_pct": 0.0,
+      "names_sample": [
+        "下ん湯",
+        "大和湯",
+        "女性専用岩盤浴 えいむ",
+        "久の湯",
+        "滝の湯",
+        "ジートピア",
+        "リフレ",
+        "観音湯",
+        "サウナモンキー名古屋",
+        "一の宮温泉",
+        "稲荷湯",
+        "月廻り温泉・離れの宿",
+        "サウナいしのまき",
+        "駒の湯温泉",
+        "世界谷地温泉",
+        "福の湯",
+        "馬場の湯 公共浴場",
+        "亀の湯",
+        "ふれあいの湯",
+        "湯パーク松島"
+      ]
+    }
+  },
+  "total": 6503,
+  "containment": {
+    "found": [],
+    "not_found": [
+      "草津温泉",
+      "有馬温泉",
+      "道後温泉",
+      "別府温泉",
+      "箱根湯本温泉",
+      "登別温泉",
+      "黒川温泉",
+      "湯布院温泉",
+      "城崎温泉",
+      "白浜温泉"
+    ],
+    "rate": 0.0
+  }
+}

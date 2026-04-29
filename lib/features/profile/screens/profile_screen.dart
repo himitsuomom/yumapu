@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/widgets/empty_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/domain/entities/user.dart' as app;
@@ -144,33 +145,33 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: 16),
 
         // ── ランキング情報 ──────────────────────────────────────────────
-        if (myRankingAsync.valueOrNull != null)
+        if (AppConfig.isRankingEnabled && myRankingAsync.valueOrNull != null)
           _RankingBanner(rankedUser: myRankingAsync.value!),
-        const SizedBox(height: 16),
+        if (AppConfig.isRankingEnabled && myRankingAsync.valueOrNull != null)
+          const SizedBox(height: 16),
 
         // ── Stats cards ────────────────────────────────────────────────
-        // UX-V7-1対応: チェックイン数カードをタップすると全訪問履歴画面へ遷移する
-        // 「訪問数」→「チェックイン数」に統一（ゲームフィール強化）
         Row(
           children: [
-            Expanded(
-              child: _StatCard(
-                icon: Icons.check_circle_outline,
-                label: 'チェックイン数',
-                value: visitCountAsync.isLoading ? '…' : '$visitCount',
-                onTap: visitCount > 0
-                    ? () => Navigator.of(context)
-                        .pushNamed('/visit-history')
-                    : null,
+            if (AppConfig.isCheckinEnabled) ...[
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.check_circle_outline,
+                  label: 'チェックイン数',
+                  value: visitCountAsync.isLoading ? '…' : '$visitCount',
+                  onTap: visitCount > 0
+                      ? () => Navigator.of(context)
+                          .pushNamed('/visit-history')
+                      : null,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: _StatCard(
                 icon: Icons.favorite_outline,
                 label: 'お気に入り',
                 value: favoritesAsync.isLoading ? '…' : '$favoriteCount',
-                // UX-V8-2: お気に入り数カードをタップするとお気に入り画面へ遷移
                 onTap: favoriteCount > 0
                     ? () => Navigator.of(context).pushNamed('/favorites')
                     : null,
@@ -485,25 +486,27 @@ class _GamificationCards extends ConsumerWidget {
             isDark: Theme.of(context).brightness == Brightness.dark,
           ),
         ),
-        const SizedBox(width: 12),
         // ── ランキングカード ──────────────────────────────────────
-        Expanded(
-          child: _GamificationCard(
-            onTap: () => Navigator.of(context).pushNamed('/ranking'),
-            backgroundColor: const Color(0xFFE3F2FD),
-            borderColor: const Color(0xFF90CAF9),
-            icon: const Icon(Icons.leaderboard, size: 28, color: Color(0xFF1565C0)),
-            title: 'ランキング',
-            subtitle: myRankingAsync.isLoading
-                ? '読込中...'
-                : ranking != null
-                    ? (ranking.rankPosition != null
-                        ? '${ranking.rankPosition}位'
-                        : ranking.currentTitle)
-                    : '記録なし',
-            isDark: Theme.of(context).brightness == Brightness.dark,
+        if (AppConfig.isRankingEnabled) ...[
+          const SizedBox(width: 12),
+          Expanded(
+            child: _GamificationCard(
+              onTap: () => Navigator.of(context).pushNamed('/ranking'),
+              backgroundColor: const Color(0xFFE3F2FD),
+              borderColor: const Color(0xFF90CAF9),
+              icon: const Icon(Icons.leaderboard, size: 28, color: Color(0xFF1565C0)),
+              title: 'ランキング',
+              subtitle: myRankingAsync.isLoading
+                  ? '読込中...'
+                  : ranking != null
+                      ? (ranking.rankPosition != null
+                          ? '${ranking.rankPosition}位'
+                          : ranking.currentTitle)
+                      : '記録なし',
+              isDark: Theme.of(context).brightness == Brightness.dark,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

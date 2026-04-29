@@ -59,6 +59,20 @@ class AppConfig {
     defaultValue: '',
   );
 
+  // ── Feature flags (default off — enable via --dart-define) ──────────────
+  static const bool isCheckinEnabled = bool.fromEnvironment(
+    'FEATURE_CHECKIN',
+    defaultValue: false,
+  );
+  static const bool isReviewEnabled = bool.fromEnvironment(
+    'FEATURE_REVIEW',
+    defaultValue: false,
+  );
+  static const bool isRankingEnabled = bool.fromEnvironment(
+    'FEATURE_RANKING',
+    defaultValue: false,
+  );
+
   /// True when real Supabase credentials are provided.
   static bool get isSupabaseConfigured =>
       supabaseAnonKey.isNotEmpty && !supabaseUrl.contains('your-project');
