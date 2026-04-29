@@ -10,6 +10,7 @@ import 'package:yu_map/app.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/firebase_options.dart';
 import 'package:yu_map/services/analytics_service.dart';
+import 'package:yu_map/services/notification_service.dart';
 import 'package:yu_map/services/subscription_service.dart';
 
 Future<void> main() async {
@@ -52,6 +53,14 @@ Future<void> main() async {
 
   // 5. AnalyticsService — no-op when Firebase is not initialized.
   AnalyticsService.instance.initialise();
+
+  // 6. NotificationService — FCM 初期化と通知ハンドラー設定。
+  //    Firebase が初期化済みの場合のみ有効。ログイン後に registerToken() を呼ぶ。
+  try {
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('NotificationService init skipped: $e');
+  }
 
   // A-1対応: 全ての初期化が完了したのでスプラッシュ画面を解除する。
   // これを呼ぶまでネイティブのスプラッシュ（ロゴ入り）が表示され続ける。

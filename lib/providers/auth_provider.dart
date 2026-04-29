@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/domain/entities/user.dart' as app;
 import 'package:yu_map/services/analytics_service.dart';
+import 'package:yu_map/services/notification_service.dart';
 
 /// Supabase client — null when Supabase is not configured.
 final supabaseClientProvider = Provider<SupabaseClient?>((ref) {
@@ -73,6 +74,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     try {
       await _client.auth.signInWithPassword(email: email, password: password);
       AnalyticsService.instance.logLogin();
+      NotificationService.instance.registerToken().ignore();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -98,6 +100,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
     if (_client == null) return;
     state = const AsyncLoading();
     try {
+      await NotificationService.instance.removeToken();
       await _client.auth.signOut();
       state = const AsyncData(null);
     } catch (e, st) {

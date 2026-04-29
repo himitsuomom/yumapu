@@ -43,9 +43,11 @@ dependencies:
   google_mobile_ads: ^4.0.0
   purchases_flutter: 9.12.0
   
-  # Analytics
+  # Analytics & Push Notifications
   firebase_core: ^2.24.2
   firebase_analytics: ^10.6.0
+  firebase_messaging: ^14.6.0
+  flutter_local_notifications: ^17.0.0
   sentry_flutter: 9.13.0
   
   # Storage
