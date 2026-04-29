@@ -31,10 +31,12 @@ import 'package:yu_map/features/ranking/screens/ranking_screen.dart';
 import 'package:yu_map/features/inquiry/inquiry_screen.dart';
 import 'package:yu_map/features/settings/legal_screen.dart';
 import 'package:yu_map/features/settings/settings_screen.dart';
+import 'package:yu_map/core/navigation/app_navigator.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/connectivity_provider.dart';
 import 'package:yu_map/providers/theme_provider.dart';
 import 'package:yu_map/screens/subscription_screen.dart';
+import 'package:yu_map/services/notification_service.dart';
 
 class YuMapApp extends ConsumerWidget {
   const YuMapApp({super.key});
@@ -51,6 +53,9 @@ class YuMapApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: themeMode, // D-2対応: themeModeProvider から取得
       debugShowCheckedModeBanner: false,
+      // 通知サービスからContextなしで画面遷移するためのグローバルキー。
+      // notification_service.dart の _handleNavigation がこのキー経由でナビゲートする。
+      navigatorKey: appNavigatorKey,
       // Named routes for screens pushed via Navigator.pushNamed.
       routes: {
         '/login': (_) => const LoginScreen(),
@@ -111,8 +116,8 @@ class YuMapApp extends ConsumerWidget {
             return MaterialPageRoute<bool>(
               builder: (_) => OwnerFacilityEditScreen(facility: facility),
             );
-          // E-1修正: /review ルートは未使用（実際のレビュー投稿は ReviewBottomSheet 経由）
-          // WriteReviewScreen は削除対象のため、このルートも削除する
+          // E-1修正: /review ルートは削除済み（レビュー投稿は ReviewBottomSheet 経由）
+          // write_review_screen.dart は手動削除待ち（git rm で対応）
           case '/plan-detail':
             final plan = settings.arguments as OnsenPlan;
             return MaterialPageRoute<void>(
@@ -171,6 +176,11 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
     super.initState();
     _initStorage();
     _initDeepLinks();
+    // cold start（アプリ終了状態からの通知タップ）による保留ナビゲーションを実行する。
+    // この時点では Navigator はまだ構築済みのため、postFrameCallback 経由で安全に遷移できる。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.instance.drainPendingNavigation();
+    });
   }
 
   /// Deep Link（カスタムURLスキーム）の受信を開始する。

@@ -1,30 +1,38 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:yu_map/app.dart';
 
 void main() {
+  setUp(() {
+    // FlutterSecureStorage などのプラットフォームチャネルをダミーで応答させる。
+    // これがないと initState の _initStorage が MissingPluginException で止まり
+    // _onboardingCompleted が null のまま → CircularProgressIndicator が残る。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+      (call) async => null,
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('flutter_native_splash'),
+      (call) async => null,
+    );
+  });
+
   testWidgets('App renders login screen when not authenticated',
       (WidgetTester tester) async {
-    // YuMapApp is a ConsumerWidget and requires ProviderScope.
-    // In test environment AppConfig.isSupabaseConfigured returns false,
-    // so the auth state is unauthenticated → LoginScreen is shown.
     await tester.pumpWidget(
       const ProviderScope(
         child: YuMapApp(),
       ),
     );
-    await tester.pump();
+    // _initStorage の非同期処理を全て完了させる
+    await tester.pumpAndSettle(const Duration(seconds: 3));
 
-    // LoginScreen's AppBar shows 'ログイン'
+    // 認証前 → LoginScreen が表示されていること
     expect(find.text('ログイン'), findsAtLeastNWidgets(1));
   });
 

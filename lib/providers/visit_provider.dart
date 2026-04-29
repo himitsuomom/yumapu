@@ -19,7 +19,7 @@ final visitCountProvider = FutureProvider.autoDispose<int>((ref) async {
         .select()
         .eq('user_id', session.user.id)
         .count(CountOption.exact);
-    return response.count ?? 0;
+    return response.count;
   } catch (_) {
     return 0;
   }

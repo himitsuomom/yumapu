@@ -35,7 +35,7 @@ final reviewCountProvider =
         .select()
         .eq('facility_id', facilityId)
         .count(CountOption.exact);
-    return response.count ?? 0;
+    return response.count;
   } catch (_) {
     return 0;
   }
@@ -99,7 +99,7 @@ final facilityReviewSummaryProvider =
           .select()
           .eq('facility_id', facilityId)
           .count(CountOption.exact);
-      final count = countResult.count ?? 0;
+      final count = countResult.count;
 
       double avg = 0.0;
       if (count > 0) {

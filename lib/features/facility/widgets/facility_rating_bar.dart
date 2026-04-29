@@ -5,7 +5,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/review_provider.dart' show facilityReviewSummaryProvider;
 
 /// UX-V13-2: 施設名直下に平均評価スコアと件数を大きく表示するウィジェット。
