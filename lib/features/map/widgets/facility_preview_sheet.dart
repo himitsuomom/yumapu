@@ -28,7 +28,7 @@ import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/facility_provider.dart'
-    show facilityPhotosProvider, facilityAmenitiesProvider, supabaseClientProvider;
+    show facilityPhotosProvider, facilityAmenitiesProvider;
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/providers/review_provider.dart'
     show

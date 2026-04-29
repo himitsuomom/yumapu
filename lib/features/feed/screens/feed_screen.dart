@@ -37,9 +37,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   /// 施設タグをタップすると設定され、フィルターチップの × で解除する。
   String? _facilityFilter;
 
-  /// 施設絞り込み中の施設ID（施設詳細へのナビゲーション用）。
-  String? _facilityFilterId;
-
   /// 現在のソート順（新しい順 / 人気順）。
   PostFeedSortBy _sortBy = PostFeedSortBy.newest;
 
@@ -105,12 +102,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final isSame = _facilityFilter == facilityName;
     setState(() {
       if (isSame) {
-        // 同じ施設をタップしたら解除
         _facilityFilter = null;
-        _facilityFilterId = null;
       } else {
         _facilityFilter = facilityName;
-        _facilityFilterId = facilityId;
       }
     });
     // サーバーサイドで絞り込み（null の場合は全件表示に戻る）
@@ -123,7 +117,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   void _clearFacilityFilter() {
     setState(() {
       _facilityFilter = null;
-      _facilityFilterId = null;
     });
     // サーバーサイドフィルターを解除して全件再取得
     ref.read(postFeedProvider.notifier).setFacilityFilter(null);

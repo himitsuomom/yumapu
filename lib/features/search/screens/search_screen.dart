@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/widgets/empty_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
@@ -15,6 +17,9 @@ import 'package:yu_map/providers/navigation_provider.dart';
 // FacilitySortBy は facility_provider.dart 経由でエクスポートされているため
 // facility_service.dart を直接インポートする必要はない
 
+/// 検索履歴を保存するストレージキー
+const _kSearchHistoryKey = 'search_history_v1';
+
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -24,6 +29,18 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
+
+  /// 検索バーのフォーカス管理。フォーカス時に履歴を表示するため使用。
+  final _searchFocusNode = FocusNode();
+
+  /// 検索バーがフォーカスされているかどうか。
+  bool _isSearchFocused = false;
+
+  /// 直近の検索履歴（最大5件）。SharedPreferences で永続化。
+  List<String> _recentSearches = [];
+
+  /// 検索履歴の永続化ストレージ。
+  static const _storage = FlutterSecureStorage();
 
   /// リアルタイム検索用の debounce タイマー。
   /// ユーザーが入力を止めてから 400ms 後に検索を実行する。
@@ -69,15 +86,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   /// Enterキー押下時にも確実に検索を実行する（debounce をスキップ）。
+  /// 検索後は履歴に保存する。
   void _onSearchSubmitted(String query) {
     _debounceTimer?.cancel();
+    final trimmed = query.trim();
     ref.read(facilitySearchParamsProvider.notifier).update(
           (p) => p.copyWith(
-            searchQuery: query.trim().isEmpty ? null : query.trim(),
+            searchQuery: trimmed.isEmpty ? null : trimmed,
             page: 0,
-            clearText: query.trim().isEmpty,
+            clearText: trimmed.isEmpty,
           ),
         );
+    // 空でなければ履歴に保存
+    if (trimmed.isNotEmpty) {
+      _saveSearchQuery(trimmed);
+    }
+    // フォーカスを外して履歴パネルを閉じる
+    _searchFocusNode.unfocus();
   }
 
   void _onFacilityTypeChanged(String? typeId) {
@@ -272,6 +297,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               textInputAction: TextInputAction.search,
               onChanged: _onSearchChanged,       // リアルタイム検索
               onSubmitted: _onSearchSubmitted,   // Enter でも検索
@@ -297,6 +323,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
           ),
+          // ── 検索履歴パネル ─────────────────────────────────────────────────
+          // 検索バーにフォーカスが当たっていて、テキストが未入力 & 履歴がある場合のみ表示。
+          if (_isSearchFocused &&
+              _searchController.text.isEmpty &&
+              _recentSearches.isNotEmpty)
+            _RecentSearchesPanel(
+              searches: _recentSearches,
+              onTap: _onRecentSearchTap,
+              onRemove: _removeSearchQuery,
+            ),
           const SizedBox(height: 8),
           // ── Filter chips ─────────────────────────────────────────────────
           FilterBar(
@@ -507,11 +543,84 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         _searchController.text = currentQuery;
       }
     });
+    // 検索履歴をストレージから読み込む
+    _loadRecentSearches();
+    // フォーカス状態の変化を監視して履歴パネルの表示を切り替える
+    _searchFocusNode.addListener(_onFocusChanged);
+  }
+
+  /// ストレージから検索履歴を読み込む。
+  Future<void> _loadRecentSearches() async {
+    try {
+      final raw = await _storage.read(key: _kSearchHistoryKey);
+      if (raw != null && mounted) {
+        final list = List<String>.from(
+          jsonDecode(raw) as List<dynamic>,
+        );
+        setState(() => _recentSearches = list);
+      }
+    } catch (_) {
+      // 読み込みに失敗しても検索機能には影響しない
+    }
+  }
+
+  /// 検索履歴にキーワードを追加してストレージに保存する。
+  ///
+  /// 同じキーワードが既にある場合は先頭に移動する。
+  /// 最大5件を超えた場合は末尾から削除する。
+  Future<void> _saveSearchQuery(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+    final updated = [
+      trimmed,
+      ..._recentSearches.where((q) => q != trimmed),
+    ].take(5).toList();
+    if (mounted) setState(() => _recentSearches = updated);
+    try {
+      await _storage.write(
+        key: _kSearchHistoryKey,
+        value: jsonEncode(updated),
+      );
+    } catch (_) {
+      // 保存に失敗しても検索機能には影響しない
+    }
+  }
+
+  /// 特定の検索履歴を削除してストレージを更新する。
+  Future<void> _removeSearchQuery(String query) async {
+    final updated = _recentSearches.where((q) => q != query).toList();
+    if (mounted) setState(() => _recentSearches = updated);
+    try {
+      await _storage.write(
+        key: _kSearchHistoryKey,
+        value: jsonEncode(updated),
+      );
+    } catch (_) {}
+  }
+
+  /// 検索バーのフォーカス変化を処理する。
+  void _onFocusChanged() {
+    if (mounted) {
+      setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
+    }
+  }
+
+  /// 検索履歴のキーワードをタップして検索を実行する。
+  void _onRecentSearchTap(String query) {
+    _searchController.text = query;
+    _searchFocusNode.unfocus();
+    _debounceTimer?.cancel();
+    ref.read(facilitySearchParamsProvider.notifier).update(
+          (p) => p.copyWith(searchQuery: query, page: 0),
+        );
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _searchFocusNode
+      ..removeListener(_onFocusChanged)
+      ..dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -1050,6 +1159,90 @@ class _FacilityPopupMenu extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── 検索履歴パネル ────────────────────────────────────────────────────────────
+
+/// 検索バーにフォーカスが当たり、テキストが空のときに表示する検索履歴リスト。
+///
+/// 最大5件の直近検索ワードを表示し、タップで再検索・×ボタンで削除できる。
+/// Material の Card + ListTile で実装し、検索フィールドの直下に自然に溶け込む。
+class _RecentSearchesPanel extends StatelessWidget {
+  const _RecentSearchesPanel({
+    required this.searches,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  /// 表示する検索履歴（最大5件、最新順）
+  final List<String> searches;
+
+  /// 履歴キーワードをタップしたときのコールバック
+  final void Function(String query) onTap;
+
+  /// 特定の履歴を削除するコールバック
+  final void Function(String query) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ヘッダー
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.history,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '最近の検索',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // 検索履歴リスト
+          ...searches.map(
+            (q) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.search, size: 18),
+              title: Text(
+                q,
+                style: const TextStyle(fontSize: 14),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                tooltip: '削除',
+                onPressed: () => onRemove(q),
+              ),
+              onTap: () => onTap(q),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

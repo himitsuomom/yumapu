@@ -12,7 +12,6 @@
 //   followCountsProvider     — あるユーザーのフォロワー数・フォロー中数
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
 // ────────────────────────────────────────────────────────────────────────────

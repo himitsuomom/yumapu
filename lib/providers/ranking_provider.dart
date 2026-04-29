@@ -149,7 +149,7 @@ final myRankingProvider =
         .eq('user_id', session.user.id)
         .maybeSingle();
     if (data == null) return null;
-    return RankedUser.fromJson(data as Map<String, dynamic>);
+    return RankedUser.fromJson(data);
   } catch (e, st) {
     // エラーをリスロー → ランキング画面の自分の順位カードで error UI が表示される
     Error.throwWithStackTrace(e, st);

@@ -512,54 +512,6 @@ class _GamificationCards extends ConsumerWidget {
   }
 }
 
-// ── フィードリンクカード ───────────────────────────────────────────────────────
-/// G-1対応: フィードがボトムナビから外れたため、プロフィール画面からのアクセス導線。
-/// _PlansLinkCard と同じスタイルで統一する。
-// v41更新: フィードはボトムナビに昇格したため、ランキングリンクカードに置き換え。
-class _RankingLinkCard extends StatelessWidget {
-  const _RankingLinkCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        onTap: () => Navigator.of(context).pushNamed('/ranking'),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              const Icon(Icons.leaderboard_outlined),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ランキング',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      '全国の温泉ランキングをチェック',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _GamificationCard extends StatelessWidget {
   const _GamificationCard({
     required this.onTap,
