@@ -244,12 +244,9 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: 24),
         _PlansLinkCard(plansAsync: plansAsync),
 
-        // ── ランキングへのリンク ────────────────────────────────────
-        // v41更新: フィードがボトムナビに昇格したため、代わりにランキングを案内。
-        const SizedBox(height: 12),
-        const _RankingLinkCard(),
-
         // ── Edit profile / Settings links ──────────────────────────────
+        // UX-V28-1: _RankingLinkCard は _GamificationCards にランキングカードが
+        // 既に含まれているため重複。削除してプロフィール画面をすっきりさせた。
         const SizedBox(height: 12),
         OutlinedButton.icon(
           icon: const Icon(Icons.edit_outlined),
@@ -675,13 +672,31 @@ class _OwnFollowCountsRow extends ConsumerWidget {
           ),
         ],
       ),
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      // UX-V28-3: ロード中・エラー時も「-」でフォールバック表示してレイアウト崩れを防ぐ。
+      // SizedBox.shrink()だとプロフィール画面でスペースが急にできてガタつく。
+      loading: () => Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          _FollowCountBadge(label: 'フォロワー', count: -1),
+          SizedBox(width: 32),
+          _FollowCountBadge(label: 'フォロー中', count: -1),
+        ],
+      ),
+      error: (_, __) => Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          _FollowCountBadge(label: 'フォロワー', count: -1),
+          SizedBox(width: 32),
+          _FollowCountBadge(label: 'フォロー中', count: -1),
+        ],
+      ),
     );
   }
 }
 
 /// フォロワー数・フォロー中数を縦並びで表示するバッジ。
+///
+/// [count] に -1 を渡すとロード中・エラーを示す「-」を表示する。
 class _FollowCountBadge extends StatelessWidget {
   const _FollowCountBadge({required this.label, required this.count});
 
@@ -693,7 +708,8 @@ class _FollowCountBadge extends StatelessWidget {
     return Column(
       children: [
         Text(
-          '$count',
+          // UX-V28-3: -1 はロード中・エラーの sentinel値。「-」で表示してUIのガタつきを防ぐ
+          count < 0 ? '-' : '$count',
           style: Theme.of(context)
               .textTheme
               .titleMedium
