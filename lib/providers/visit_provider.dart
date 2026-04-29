@@ -14,14 +14,12 @@ final visitCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final session = ref.watch(sessionProvider);
   if (client == null || session == null) return 0;
   try {
-    final result = await client
+    final response = await client
         .from('visits')
-        .select(
-          'id',
-          const FetchOptions(count: CountOption.exact, head: true),
-        )
-        .eq('user_id', session.user.id);
-    return result.count ?? 0;
+        .select()
+        .eq('user_id', session.user.id)
+        .count(CountOption.exact);
+    return response.count ?? 0;
   } catch (_) {
     return 0;
   }

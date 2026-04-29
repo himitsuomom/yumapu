@@ -30,15 +30,12 @@ final reviewCountProvider =
   final client = ref.read(supabaseClientProvider);
   if (client == null) return 0;
   try {
-    // head: true にすることでデータ本体を転送せず COUNT のみを取得する（Bug-V7-1修正）
-    final result = await client
+    final response = await client
         .from('reviews')
-        .select(
-          'id',
-          const FetchOptions(count: CountOption.exact, head: true),
-        )
-        .eq('facility_id', facilityId);
-    return result.count ?? 0;
+        .select()
+        .eq('facility_id', facilityId)
+        .count(CountOption.exact);
+    return response.count ?? 0;
   } catch (_) {
     return 0;
   }
@@ -99,8 +96,9 @@ final facilityReviewSummaryProvider =
     try {
       final countResult = await client
           .from('reviews')
-          .select('id', const FetchOptions(count: CountOption.exact, head: true))
-          .eq('facility_id', facilityId);
+          .select()
+          .eq('facility_id', facilityId)
+          .count(CountOption.exact);
       final count = countResult.count ?? 0;
 
       double avg = 0.0;
