@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
 
     steps:
       - name: リポジトリをチェックアウト
@@ -26,19 +25,14 @@ jobs:
       - name: 依存関係をインストール
         run: flutter pub get
 
-      - name: Flutter 静的解析を実行 (reviewdog)
-        uses: reviewdog/action-dartanalyzer@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-pr-review
-          fail_on_error: false
+      - name: Flutter 静的解析を実行
+        run: flutter analyze --fatal-infos
 
   flutter_test:
     name: Flutter テスト
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
 
     steps:
       - name: リポジトリをチェックアウト
@@ -54,8 +48,22 @@ jobs:
       - name: 依存関係をインストール
         run: flutter pub get
 
-      - name: テストを実行
-        run: flutter test --coverage
+      - name: CI 用ダミー .env を作成
+        run: |
+          cat <<'EOF' > .env
+          SUPABASE_URL=https://placeholder.supabase.co
+          SUPABASE_ANON_KEY=placeholder_anon_key
+          GOOGLE_MAPS_KEY_ANDROID=placeholder
+          GOOGLE_MAPS_KEY_IOS=placeholder
+          REVENUECAT_KEY_ANDROID=placeholder
+          REVENUECAT_KEY_IOS=placeholder
+          ADMOB_BANNER_ANDROID=ca-app-pub-3940256099942544/6300978111
+          ADMOB_BANNER_IOS=ca-app-pub-3940256099942544/2934735716
+          ADMOB_REWARDED_ANDROID=ca-app-pub-3940256099942544/5224354917
+          ADMOB_REWARDED_IOS=ca-app-pub-3940256099942544/1712485313
+          SUPABASE_SERVICE_ROLE_KEY=placeholder
+          SENTRY_DSN=placeholder
+          EOF
 
-      - name: 型チェック（analyze）
-        run: flutter analyze --fatal-infos
+      - name: テストを実行
+        run: flutter test
