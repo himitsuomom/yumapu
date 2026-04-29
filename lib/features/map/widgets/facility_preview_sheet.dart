@@ -14,8 +14,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'package:yu_map/core/constants/app_constants.dart';
+import 'package:yu_map/core/utils/opening_hours_parser.dart';
 import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/core/widgets/photo_gallery_viewer.dart';
@@ -23,7 +26,7 @@ import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/facility_provider.dart'
-    show facilityPhotosProvider;
+    show facilityPhotosProvider, facilityAmenitiesProvider, supabaseClientProvider;
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/providers/review_provider.dart'
     show
@@ -32,36 +35,8 @@ import 'package:yu_map/providers/review_provider.dart'
 import 'package:yu_map/services/checkin_service.dart';
 
 // ── 写真 + アメニティ取得用プロバイダー ────────────────────────────────────────
-// 写真プロバイダーは facility_provider.dart の facilityPhotosProvider を共有使用。
-
-/// 施設のアメニティ一覧（有効なものだけ）を取得する。
-final _facilityAmenitiesProvider =
-    FutureProvider.autoDispose.family<List<String>, String>(
-  (ref, facilityId) async {
-    final client = ref.read(supabaseClientProvider);
-    if (client == null) return [];
-    try {
-      final rows = await client
-          .from('facility_amenities')
-          .select('value, amenities!amenity_id(name_ja, code)')
-          .eq('facility_id', facilityId) as List;
-
-      return rows
-          .where((row) {
-            final v = (row['value'] as String? ?? '').toLowerCase();
-            return v == 'true' || v == '1' || v == 'yes';
-          })
-          .map((row) =>
-              (row['amenities'] as Map<String, dynamic>?)?['name_ja']
-                  as String? ??
-              '')
-          .where((name) => name.isNotEmpty)
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  },
-);
+// facilityPhotosProvider / facilityAmenitiesProvider はともに facility_provider.dart
+// で定義されている共有プロバイダーを使用する（DRY原則）。
 
 // ── メインウィジェット ──────────────────────────────────────────────────────────
 
@@ -229,6 +204,19 @@ class _FacilityPreviewSheetState
     }
   }
 
+  // ── シェア ────────────────────────────────────────────────────────────────
+
+  /// 施設のURLをOSのシェアシートで共有する。
+  /// share_plus を使って「https://yumap.app/facility/{id}」形式のURLを送る。
+  /// app_links を受信できる端末でアプリが開いていれば、その施設画面へ遷移する。
+  void _shareFacility() {
+    final facility = widget.facility;
+    final url =
+        '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
+    final text = '${facility.name}\n$url';
+    Share.share(text, subject: '湯マップ — ${facility.name}');
+  }
+
   // ── チェックイン ───────────────────────────────────────────────────────────
 
   /// チェックイン処理を CheckinService に委譲する。
@@ -258,7 +246,8 @@ class _FacilityPreviewSheetState
     final reviewsAsync = ref.watch(reviewListProvider(facility.id));
     // 統合プロバイダー: count + avgRating を1回のRPC呼び出しで取得
     final reviewSummaryAsync = ref.watch(facilityReviewSummaryProvider(facility.id));
-    final amenitiesAsync = ref.watch(_facilityAmenitiesProvider(facility.id));
+    // facilityAmenitiesProvider は facility_provider.dart の共有プロバイダーを使用（DRY化済み）
+    final amenitiesAsync = ref.watch(facilityAmenitiesProvider(facility.id));
 
     return DraggableScrollableSheet(
       initialChildSize: 0.45,
@@ -277,18 +266,38 @@ class _FacilityPreviewSheetState
           child: CustomScrollView(
             controller: scrollController,
             slivers: [
-              // ── ドラッグハンドル ────────────────────────────────────
+              // ── ドラッグハンドル + 閉じるボタン ────────────────────
+              // UX-V24-2: アプリ初心者がシートの閉じ方を迷わないよう、
+              // ドラッグハンドル右側に×ボタンを追加する。
+              // スワイプダウンでも閉じられるが、ボタンで明示的に閉じる手段を提供。
               SliverToBoxAdapter(
-                child: Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 10, bottom: 4),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // ドラッグハンドル（中央）
+                    Container(
+                      margin: const EdgeInsets.only(top: 10, bottom: 4),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
-                  ),
+                    // 閉じるボタン（右端）
+                    Positioned(
+                      right: 4,
+                      top: 2,
+                      child: IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        color: Colors.grey[500],
+                        tooltip: '閉じる',
+                        padding: const EdgeInsets.all(6),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -409,9 +418,11 @@ class _FacilityPreviewSheetState
                               }),
 
                               // アメニティチップ（施設名の直下に移動）
+                              // facilityAmenitiesProvider は List<FacilityAmenity> を返す。
+                              // 表示には .nameJa を使用する。
                               amenitiesAsync.whenOrNull(
-                                data: (names) {
-                                  if (names.isEmpty) {
+                                data: (amenities) {
+                                  if (amenities.isEmpty) {
                                     return const SizedBox.shrink();
                                   }
                                   return Padding(
@@ -419,7 +430,7 @@ class _FacilityPreviewSheetState
                                     child: Wrap(
                                       spacing: 6,
                                       runSpacing: 6,
-                                      children: names.map((name) {
+                                      children: amenities.map((amenity) {
                                         return Container(
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 10, vertical: 5),
@@ -433,7 +444,7 @@ class _FacilityPreviewSheetState
                                                     .withValues(alpha: 0.3)),
                                           ),
                                           child: Text(
-                                            name,
+                                            amenity.nameJa,
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: typeColor,
@@ -484,7 +495,7 @@ class _FacilityPreviewSheetState
                             ],
                           ),
                         ),
-                        // ナビチップ + お気に入りハートボタン（横並び）
+                        // ナビチップ + シェア + お気に入りハートボタン（横並び）
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -503,6 +514,16 @@ class _FacilityPreviewSheetState
                                 ),
                               ),
                             ),
+                            // シェアボタン（ゲスト・ログイン問わず使える）
+                            IconButton(
+                              onPressed: _shareFacility,
+                              icon: Icon(
+                                Icons.share_outlined,
+                                color: Colors.grey[500],
+                                size: 24,
+                              ),
+                              tooltip: 'シェア',
+                            ),
                             _FavoriteButton(
                                 facilityId: facility.id, isFav: isFav),
                           ],
@@ -513,43 +534,44 @@ class _FacilityPreviewSheetState
                 ),
               ),
 
-              // ── 基本情報グリッド（情報がある場合のみ表示）──────────
-              if (facility.price != null && facility.price! > 0 ||
-                  facility.openingHours != null &&
-                      facility.openingHours!.isNotEmpty ||
-                  facility.address != null && facility.address!.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: Column(
-                      children: [
-                        if (facility.price != null && facility.price! > 0)
-                          _InfoRow(
-                            icon: Icons.payments_outlined,
-                            iconColor: typeColor,
-                            label: '入浴料金',
-                            value: '¥${facility.price}',
-                          ),
-                        if (facility.openingHours != null &&
-                            facility.openingHours!.isNotEmpty)
-                          _InfoRow(
-                            icon: Icons.access_time_outlined,
-                            iconColor: typeColor,
-                            label: '営業時間',
-                            value: facility.openingHours!,
-                          ),
-                        if (facility.address != null &&
-                            facility.address!.isNotEmpty)
-                          _InfoRow(
-                            icon: Icons.location_on_outlined,
-                            iconColor: typeColor,
-                            label: '住所',
-                            value: facility.address!,
-                          ),
-                      ],
-                    ),
+              // ── 基本情報グリッド（常に料金行を表示。情報がある場合のみ追加行を表示）──────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Column(
+                    children: [
+                      // 料金: null/0の場合は「料金不明」と表示（非表示にしない）
+                      _InfoRow(
+                        icon: Icons.payments_outlined,
+                        iconColor: typeColor,
+                        label: '入浴料金',
+                        value: (facility.price != null && facility.price! > 0)
+                            ? '¥${facility.price}'
+                            : '料金不明',
+                        isUnknown: facility.price == null || facility.price! == 0,
+                      ),
+                      // 営業時間: OSM形式を日本語に変換して表示
+                      if (facility.openingHours != null &&
+                          facility.openingHours!.isNotEmpty)
+                        _InfoRow(
+                          icon: Icons.access_time_outlined,
+                          iconColor: typeColor,
+                          label: '営業時間',
+                          value: parseOsmOpeningHours(facility.openingHours) ??
+                              facility.openingHours!,
+                        ),
+                      if (facility.address != null &&
+                          facility.address!.isNotEmpty)
+                        _InfoRow(
+                          icon: Icons.location_on_outlined,
+                          iconColor: typeColor,
+                          label: '住所',
+                          value: facility.address!,
+                        ),
+                    ],
                   ),
                 ),
+              ),
 
               // ── クチコミプレビュー（最新2件）──────────────────────────
               SliverToBoxAdapter(
@@ -1050,12 +1072,16 @@ class _InfoRow extends StatelessWidget {
     required this.iconColor,
     required this.label,
     required this.value,
+    this.isUnknown = false,
   });
 
   final IconData icon;
   final Color iconColor;
   final String label;
   final String value;
+
+  /// true のとき値テキストをグレーで表示する（「料金不明」などデータ欠損を示す場合）
+  final bool isUnknown;
 
   @override
   Widget build(BuildContext context) {
@@ -1064,7 +1090,8 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: iconColor),
+          Icon(icon, size: 18,
+              color: isUnknown ? Colors.grey[400] : iconColor),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1081,10 +1108,12 @@ class _InfoRow extends StatelessWidget {
                 const SizedBox(height: 1),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     height: 1.3,
+                    // 「料金不明」のときはグレーで表示（情報欠損を視覚的に区別）
+                    color: isUnknown ? Colors.grey[400] : null,
                   ),
                 ),
               ],

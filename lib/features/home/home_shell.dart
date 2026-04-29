@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/features/favorites/favorites_screen.dart';
+import 'package:yu_map/features/feed/screens/feed_screen.dart';
 import 'package:yu_map/features/map/screens/map_screen.dart';
 import 'package:yu_map/features/profile/screens/profile_screen.dart';
-import 'package:yu_map/features/ranking/screens/ranking_screen.dart';
 import 'package:yu_map/features/search/screens/search_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
@@ -15,9 +15,9 @@ import 'package:yu_map/providers/navigation_provider.dart';
 /// Manages 5 tabs with [IndexedStack] so each tab retains its state across
 /// switches. Favorites are loaded eagerly on first mount.
 ///
-/// **タブ構成（G-1対応）**: 地図 / 検索 / ランキング / お気に入り / プロフィール
-/// - ランキング（ゲーミフィケーション）をフィードより優先して2タップ不要で到達できるようにした。
-/// - フィードは プロフィール画面 → 「みんなの投稿」カード から1タップで開ける。
+/// **タブ構成（v41更新）**: 地図 / 検索 / 投稿 / お気に入り / プロフィール
+/// - フィードをボトムナビに昇格（UX v20分析の最重要課題対応）。
+/// - ランキングはプロフィール画面のランキングバナー・カードから1タップで到達可能。
 ///
 /// **遅延ロード方式**: タブを初めて訪問したときにのみ画面を生成する。
 class HomeShell extends ConsumerStatefulWidget {
@@ -39,7 +39,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   /// タブ番号に対応する画面ウィジェットを返す。
   ///
-  /// タブ構成: 0=地図 / 1=検索 / 2=ランキング / 3=お気に入り / 4=プロフィール
+  /// タブ構成: 0=地図 / 1=検索 / 2=投稿（フィード） / 3=お気に入り / 4=プロフィール
   Widget _buildScreen(int index) {
     switch (index) {
       case 0:
@@ -47,9 +47,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       case 1:
         return const SearchScreen();
       case 2:
-        // G-1対応: ランキングをフィードの代わりにボトムナビに昇格。
-        // フィードは /feed ルートまたはプロフィール画面からアクセス可能。
-        return const RankingScreen();
+        // v41更新: フィードをボトムナビに昇格（UX v20分析の最重要課題対応）。
+        // ランキングはプロフィール画面のランキングバナー・カードから1タップで到達可能。
+        return const FeedScreen();
       case 3:
         return const FavoritesScreen();
       case 4:
@@ -131,12 +131,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 icon: Icon(Icons.search),
                 label: '検索',
               ),
-              // G-1対応: ランキングをフィードの代わりにタブに昇格。
-              // ゲーミフィケーション機能を1タップで到達できる位置に置く。
+              // v41更新: フィードをボトムナビに昇格（UX v20最重要課題対応）。
+              // UX-V24-3: ラベルを「投稿」→「フィード」に変更。
+              // 「投稿」だと「投稿する画面」と誤解されやすいため、コンテンツを閲覧する意味の「フィード」に統一。
               const BottomNavigationBarItem(
-                icon: Icon(Icons.leaderboard_outlined),
-                activeIcon: Icon(Icons.leaderboard),
-                label: 'ランキング',
+                icon: Icon(Icons.dynamic_feed_outlined),
+                activeIcon: Icon(Icons.dynamic_feed),
+                label: 'フィード',
               ),
               // UX-V7-6対応: ゲストモード時はロックバッジを表示して利用制限を事前に示す
               BottomNavigationBarItem(

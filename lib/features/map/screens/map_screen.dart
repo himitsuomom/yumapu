@@ -349,7 +349,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         uri,
         headers: {
           // Nominatim の利用規約: User-Agent の指定が必須
-          'User-Agent': 'YuMap/1.0 (com.yumap.app; contact: yumap@example.com)',
+          'User-Agent': 'YuMap/1.0 (com.yumap.app; contact: himitsu.ichifirst@gmail.com)',
         },
       ).timeout(const Duration(seconds: 5));
 
@@ -477,6 +477,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final showEmptyState = facilityState.hasValue &&
         !isLoading &&
         (facilityState.valueOrNull?.isEmpty ?? false) &&
+        params.latitude != null;
+
+    // フィルター or 検索クエリがある場合は件数バナーを表示する。
+    // 0件のときは emptyState で表示するのでここでは表示しない。
+    final facilityCount = facilityState.valueOrNull?.length ?? 0;
+    final showCountBanner = facilityState.hasValue &&
+        !isLoading &&
+        facilityCount > 0 &&
+        (hasFilter || hasSearchQuery) &&
         params.latitude != null;
 
     return Scaffold(
@@ -657,6 +666,44 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
           ),
 
+          // ── フィルター/検索ヒット件数バナー（中央上部）──────────────
+          // フィルターや検索クエリがある場合に「◯件見つかりました」を表示する。
+          // ユーザーが現在の条件で何件マッチしているかを直感的に把握できる。
+          if (showCountBanner)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 72 +
+                  (hasFilter ? 44 : 0), // 検索バー + フィルターバナーの高さ分下にずらす
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Material(
+                  elevation: 2,
+                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.white.withAlpha(230),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 5),
+                    child: Text(
+                      '$facilityCount件見つかりました',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // ── 施設タイプ凡例カード（右下）──────────────────────────────
+          // 初見ユーザーがマーカー色の意味を一目で分かるようにする。
+          // 地図右下に小さいカードとして常時表示する。
+          Positioned(
+            bottom: 140,
+            right: 8,
+            child: _MapLegendCard(),
+          ),
+
           // ── 現在地ボタン（右下）──────────────────────────────────────
           Positioned(
             bottom: 96,
@@ -724,15 +771,80 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         ],
       ),
 
-      // ── フィルターFAB（左下）──────────────────────────────────────────
-      floatingActionButton: FloatingActionButton(
+      // ── フィルターFAB（右下）──────────────────────────────────────────
+      // UX-V24-1: startFloat（左下）→ endFloat（右下）に変更。
+      // Android/iOS ともに右下が標準的なFAB位置のため、初見ユーザーが見落とすリスクを減らす。
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _showFilterSheet,
         tooltip: 'フィルター',
-        child: Icon(
+        icon: Icon(
           hasFilter ? Icons.filter_list : Icons.filter_list_outlined,
         ),
+        label: Text(hasFilter ? 'フィルター中' : 'フィルター'),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+}
+
+// ── 施設タイプ凡例カード ──────────────────────────────────────────────────────
+
+/// 地図右下に常時表示する小さい凡例カード。
+/// マーカー色（温泉=赤, 銭湯=青, サウナ=緑）をユーザーに示す。
+class _MapLegendCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 3,
+      borderRadius: BorderRadius.circular(10),
+      color: Colors.white.withAlpha(230), // 90% 不透明
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            _LegendRow(color: Color(0xFFE53935), emoji: '♨', label: '温泉'),
+            SizedBox(height: 3),
+            _LegendRow(color: Color(0xFF1976D2), emoji: '🛁', label: '銭湯'),
+            SizedBox(height: 3),
+            _LegendRow(color: Color(0xFF2E7D32), emoji: '🧖', label: 'サウナ'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendRow extends StatelessWidget {
+  const _LegendRow({
+    required this.color,
+    required this.emoji,
+    required this.label,
+  });
+
+  final Color color;
+  final String emoji;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(emoji, style: const TextStyle(fontSize: 11)),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        ),
+      ],
     );
   }
 }

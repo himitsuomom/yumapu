@@ -337,6 +337,41 @@ final facilityAmenitiesProvider =
 
 // ── Facility photos ───────────────────────────────────────────────────────────
 
+/// 直近30日でチェックイン数が多い「トレンド施設」を最大10件返すプロバイダー。
+///
+/// get_trending_facilities RPC を呼び出す。チェックインが0件の場合は
+/// get_popular_facilities_no_visits（品質スコア順）にフォールバックする。
+/// キャッシュ時間: 1時間（アプリ起動中は再取得しない）
+final trendingFacilitiesProvider = FutureProvider<List<Facility>>((ref) async {
+  final client = ref.read(supabaseClientProvider);
+  if (client == null) return [];
+  try {
+    // まずトレンドデータを試みる（直近30日のチェックイン数順）
+    final rows = await client.rpc(
+      'get_trending_facilities',
+      params: {'days_ago': 30, 'limit_count': 10},
+    ) as List;
+
+    if (rows.isNotEmpty) {
+      return rows
+          .map((r) => Facility.fromJson(r as Map<String, dynamic>))
+          .toList();
+    }
+
+    // フォールバック: チェックインがない場合は品質スコア順
+    final fallbackRows = await client.rpc(
+      'get_popular_facilities_no_visits',
+      params: {'limit_count': 10},
+    ) as List;
+
+    return fallbackRows
+        .map((r) => Facility.fromJson(r as Map<String, dynamic>))
+        .toList();
+  } catch (_) {
+    return [];
+  }
+});
+
 /// 施設の写真 URL リスト（最新5枚）を取得する共有プロバイダー。
 ///
 /// facility_preview_sheet と facility_detail_screen の両方で使う。

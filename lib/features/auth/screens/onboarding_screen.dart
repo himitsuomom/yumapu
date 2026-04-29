@@ -17,6 +17,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
 /// オンボーディング完了フラグのストレージキー。
@@ -117,6 +118,37 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
+  /// 最終ページへスキップ（スキップボタン押下時）。
+  /// 最終ページにジャンプして「はじめる」「ゲストとして見る」を即座に選べる状態にする。
+  void _onSkip() {
+    // UX-V24-5: スキップ時も最終ページへ飛ぶので位置情報許可を事前リクエスト。
+    _requestLocationPermissionIfNeeded();
+    _controller.animateToPage(
+      _pages.length - 1,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  /// UX-V24-5: 最終ページ到達時に位置情報許可を事前リクエストする。
+  ///
+  /// 「この周辺の温泉を今すぐ探す」体験をスムーズにするため、
+  /// 地図を開く前に許可をもらっておく。すでに許可済みの場合は何もしない。
+  /// ユーザーが拒否しても正常に次へ進める（エラーを出さない）。
+  Future<void> _requestLocationPermissionIfNeeded() async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        // 未決定 → ダイアログを表示してリクエスト
+        await Geolocator.requestPermission();
+      }
+      // denied forever / granted / whileInUse はそのまま何もしない
+    } catch (_) {
+      // 位置情報が無効な環境では例外が出ることがある。
+      // オンボーディングの進行をブロックしないため無視する。
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isLastPage = _currentPage == _pages.length - 1;
@@ -127,12 +159,40 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // ── スキップボタン（最終ページ以外で右上に表示） ───────────────
+            SizedBox(
+              height: 40,
+              child: !isLastPage
+                  ? Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _onSkip,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey[600],
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                        child: const Text(
+                          'スキップ',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+
             // ── ページコンテンツ ────────────────────────────────────────
             Expanded(
               child: PageView.builder(
                 controller: _controller,
-                onPageChanged: (index) =>
-                    setState(() => _currentPage = index),
+                onPageChanged: (index) {
+                  setState(() => _currentPage = index);
+                  // UX-V24-5: 最終ページに到達したとき位置情報許可を事前リクエスト。
+                  // 地図画面を開く前に許可を取得しておくと「突然ダイアログが出る」感が消える。
+                  if (index == _pages.length - 1) {
+                    _requestLocationPermissionIfNeeded();
+                  }
+                },
                 itemCount: _pages.length,
                 itemBuilder: (context, index) {
                   final p = _pages[index];

@@ -18,7 +18,7 @@ import 'package:yu_map/core/widgets/empty_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/domain/entities/facility.dart';
-import 'package:yu_map/features/facility/screens/facility_detail_screen.dart'
+import 'package:yu_map/features/facility/widgets/add_to_plan_sheet.dart'
     show showAddToPlanSheet;
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/providers/auth_provider.dart';
@@ -310,7 +310,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                               ),
                             ),
                           ),
-                          // ポップアップメニュー: 「地図で見る」「プランに追加」
+                          // ポップアップメニュー: 「地図で見る」「プランに追加」「削除」
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert,
                                 color: Colors.grey, size: 20),
@@ -327,6 +327,23 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                                     0;
                               } else if (value == 'add_to_plan') {
                                 showAddToPlanSheet(context, facility);
+                              } else if (value == 'remove') {
+                                // お気に入りから削除（スワイプ削除と同じ動作）
+                                ref
+                                    .read(favoritesProvider.notifier)
+                                    .toggle(facility.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        '${facility.name}をお気に入りから削除しました'),
+                                    action: SnackBarAction(
+                                      label: '元に戻す',
+                                      onPressed: () => ref
+                                          .read(favoritesProvider.notifier)
+                                          .toggle(facility.id),
+                                    ),
+                                  ),
+                                );
                               }
                             },
                             itemBuilder: (_) => [
@@ -348,6 +365,19 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                                         size: 18),
                                     SizedBox(width: 8),
                                     Text('プランに追加'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(
+                                value: 'remove',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.favorite_border,
+                                        size: 18, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text('お気に入りから削除',
+                                        style: TextStyle(color: Colors.red)),
                                   ],
                                 ),
                               ),

@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:yu_map/models/badge.dart';
 import 'package:yu_map/providers/badge_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
@@ -23,6 +24,9 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   static final _dateFormat = DateFormat('yyyy/MM/dd');
+
+  // 全バッジタブのカテゴリフィルター
+  String? _selectedCategory; // null = すべて
 
   @override
   void initState() {
@@ -43,53 +47,240 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
     // チェックイン数（進捗表示に使用）
     final checkInCount = ref.watch(visitCountProvider).valueOrNull ?? 0;
 
+    final myCount = myBadgesAsync.valueOrNull?.length ?? 0;
+    final allCount = allBadgesAsync.valueOrNull?.length ?? 0;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('バッジ'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '獲得済み'),
-            Tab(text: '全バッジ'),
+          tabs: [
+            Tab(text: '獲得済み${myCount > 0 ? " ($myCount)" : ""}'),
+            const Tab(text: '全バッジ'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          // ── 獲得済みタブ ──────────────────────────────────────────────
-          myBadgesAsync.when(
-            data: (badges) => badges.isEmpty
-                ? const _EmptyBadgeView()
-                : _EarnedBadgeGrid(
-                    badges: badges,
-                    dateFormat: _dateFormat,
-                    checkInCount: checkInCount,
-                  ),
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
-            error: (e, _) =>
-                Center(child: Text('取得エラー: $e')),
-          ),
+          // ── 獲得進捗サマリーヘッダー ──────────────────────────────
+          if (allCount > 0)
+            _BadgeProgressHeader(
+              earned: myCount,
+              total: allCount,
+              checkInCount: checkInCount,
+            ),
+          // ── タブコンテンツ ────────────────────────────────────────
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // 獲得済みタブ
+                myBadgesAsync.when(
+                  data: (badges) => badges.isEmpty
+                      ? const _EmptyBadgeView()
+                      : _EarnedBadgeGrid(
+                          badges: badges,
+                          dateFormat: _dateFormat,
+                          checkInCount: checkInCount,
+                        ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, _) =>
+                      Center(child: Text('取得エラー: $e')),
+                ),
 
-          // ── 全バッジタブ ──────────────────────────────────────────────
-          allBadgesAsync.when(
-            data: (allBadges) {
-              final earnedIds = myBadgesAsync.valueOrNull
-                      ?.map((ub) => ub.badge.id)
-                      .toSet() ??
-                  {};
-              return _AllBadgeList(
-                allBadges: allBadges,
-                earnedIds: earnedIds,
-                checkInCount: checkInCount,
-              );
-            },
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
-            error: (e, _) =>
-                Center(child: Text('取得エラー: $e')),
+                // 全バッジタブ
+                allBadgesAsync.when(
+                  data: (allBadges) {
+                    final earnedIds = myBadgesAsync.valueOrNull
+                            ?.map((ub) => ub.badge.id)
+                            .toSet() ??
+                        {};
+                    // カテゴリフィルター適用
+                    final filtered = _selectedCategory == null
+                        ? allBadges
+                        : allBadges
+                            .where((b) => b.category == _selectedCategory)
+                            .toList();
+                    return Column(
+                      children: [
+                        // カテゴリフィルターチップ
+                        _CategoryFilterBar(
+                          allBadges: allBadges,
+                          selected: _selectedCategory,
+                          onSelected: (cat) =>
+                              setState(() => _selectedCategory = cat),
+                        ),
+                        Expanded(
+                          child: _AllBadgeList(
+                            allBadges: filtered,
+                            earnedIds: earnedIds,
+                            checkInCount: checkInCount,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, _) =>
+                      Center(child: Text('取得エラー: $e')),
+                ),
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 獲得進捗サマリーヘッダー ─────────────────────────────────────────────────
+
+class _BadgeProgressHeader extends StatelessWidget {
+  const _BadgeProgressHeader({
+    required this.earned,
+    required this.total,
+    required this.checkInCount,
+  });
+
+  final int earned;
+  final int total;
+  final int checkInCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = total > 0 ? earned / total : 0.0;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: colorScheme.primaryContainer.withAlpha(80),
+      child: Row(
+        children: [
+          // 円形進捗インジケーター
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CircularProgressIndicator(
+                  value: ratio.clamp(0.0, 1.0),
+                  strokeWidth: 5,
+                  backgroundColor: colorScheme.outline.withAlpha(50),
+                  color: colorScheme.primary,
+                ),
+                Center(
+                  child: Text(
+                    '${(ratio * 100).toInt()}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$earned / $total バッジ獲得',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                LinearProgressIndicator(
+                  value: ratio.clamp(0.0, 1.0),
+                  backgroundColor: colorScheme.outline.withAlpha(50),
+                  color: colorScheme.primary,
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '合計チェックイン: $checkInCount 回',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurface.withAlpha(160),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── カテゴリフィルターバー ──────────────────────────────────────────────────────
+
+class _CategoryFilterBar extends StatelessWidget {
+  const _CategoryFilterBar({
+    required this.allBadges,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<AppBadge> allBadges;
+  final String? selected;
+  final void Function(String? category) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    // 存在するカテゴリの一意リストを順序付きで取得
+    final seen = <String>{};
+    final categories = allBadges
+        .map((b) => b.category)
+        .whereType<String>()
+        .where(seen.add)
+        .toList();
+
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        scrollDirection: Axis.horizontal,
+        children: [
+          // 「すべて」チップ
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: FilterChip(
+              label: const Text('すべて'),
+              selected: selected == null,
+              onSelected: (_) => onSelected(null),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          // カテゴリ別チップ
+          ...categories.map((cat) {
+            final label = AppBadge(
+              id: '',
+              code: '',
+              nameJa: '',
+              nameEn: '',
+              category: cat,
+              requirements: const {},
+            ).categoryLabel;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: FilterChip(
+                label: Text(label),
+                selected: selected == cat,
+                onSelected: (_) =>
+                    onSelected(selected == cat ? null : cat),
+                visualDensity: VisualDensity.compact,
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -280,6 +471,22 @@ class _BadgeTile extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                 ],
+                // 未獲得でvisit_count型以外の場合は獲得条件テキストを表示する。
+                // badge.requirementText は Badge モデルが自動生成する人間が読めるテキスト。
+                // 例: 「草津温泉を訪問」「お気に入りを10件追加」など
+                if (!isEarned && progressInfo == null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    badge.requirementText,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF757575),
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
           ),
@@ -389,6 +596,18 @@ class _BadgeTile extends StatelessWidget {
           ],
         ),
         actions: [
+          // 獲得済みバッジはシェアボタンを表示する
+          if (isEarned)
+            TextButton.icon(
+              icon: const Icon(Icons.share_outlined, size: 16),
+              label: const Text('シェア'),
+              onPressed: () {
+                final msg = '湯マップで「${badge.nameJa}」バッジを獲得しました！\n'
+                    '${badge.descriptionJa != null && badge.descriptionJa!.isNotEmpty ? badge.descriptionJa! : badge.requirementText}\n'
+                    '#湯マップ #温泉 #サウナ';
+                Share.share(msg);
+              },
+            ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('閉じる'),

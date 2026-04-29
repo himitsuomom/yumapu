@@ -121,11 +121,11 @@ const _privacySections = [
     title: '3. 第三者への提供',
     body: '本アプリは以下のサービスを利用しており、それぞれのプライバシーポリシーに従ってデータが処理されます。\n\n'
         '・Supabase（データベース・認証・ストレージ）\n'
-        '・Google Maps Platform（地図表示）\n'
+        '・OpenStreetMap / Nominatim（地図表示・住所検索）\n'
         '・Firebase Analytics（利用状況分析）\n'
         '・Sentry（エラー監視）\n'
-        '・RevenueCat（課金管理）\n'
-        '・Google AdMob（広告配信）\n\n'
+        '・RevenueCat（課金管理 — 有効化時のみ）\n'
+        '・Google AdMob（広告配信 — 有効化時のみ）\n\n'
         '法令に基づく場合を除き、ユーザーの同意なしに第三者へ個人情報を提供することはありません。',
   ),
   _Section(

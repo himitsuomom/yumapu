@@ -10,6 +10,12 @@ import 'package:uuid/uuid.dart';
 import 'package:yu_map/models/post.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
+/// フィードの並び順
+///
+/// newest = 新しい順（created_at DESC・カーソルページング）
+/// popular = 人気順（likes DESC → created_at DESC・オフセットページング）
+enum PostFeedSortBy { newest, popular }
+
 /// 投稿フィードの状態管理
 ///
 /// StateNotifier を使って「取得・いいね・投稿・画像アップロード」をカプセル化する。
@@ -38,6 +44,21 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
   /// setFacilityFilter() で更新すると自動的に再取得する。
   String? _facilityIdFilter;
 
+  /// 現在のソート順（デフォルト: 新しい順）
+  PostFeedSortBy _sortBy = PostFeedSortBy.newest;
+
+  /// フォロー中のユーザーの投稿のみ表示するかどうか（false = 全件）
+  ///
+  /// true の場合: get_following_posts RPC を使ってフォロー中の投稿だけを取得する。
+  /// false の場合: 従来どおり全ユーザーの投稿を取得する。
+  bool _showFollowingOnly = false;
+
+  /// 外部からフォロー中フィルターの状態を取得するためのゲッター
+  bool get showFollowingOnly => _showFollowingOnly;
+
+  /// 外部からソート順を取得するためのゲッター
+  PostFeedSortBy get sortBy => _sortBy;
+
   /// 施設絞り込みフィルターを設定して再読み込みする。
   ///
   /// [facilityId] が null の場合は全件表示に戻す。
@@ -45,6 +66,23 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
   /// 施設IDに一致する投稿だけを取得するため、ページング精度が上がる。
   Future<void> setFacilityFilter(String? facilityId) async {
     _facilityIdFilter = facilityId;
+    await load();
+  }
+
+  /// ソート順を変更して再読み込みする。
+  ///
+  /// [sortBy] が現在と同じ値でも再取得を行い、最新状態に更新する。
+  Future<void> setSortOrder(PostFeedSortBy sortBy) async {
+    _sortBy = sortBy;
+    await load();
+  }
+
+  /// フォロー中フィルターを切り替えて再読み込みする。
+  ///
+  /// [showFollowingOnly] が true のとき: フォロー中のユーザーの投稿のみ表示。
+  /// false のとき: 全ユーザーの投稿を表示する。
+  Future<void> setFollowingOnlyFilter(bool showFollowingOnly) async {
+    _showFollowingOnly = showFollowingOnly;
     await load();
   }
 
@@ -61,6 +99,49 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
     try {
       final session = _ref.read(sessionProvider);
 
+      // ── フォロー中フィルターが有効な場合は RPC を使う ──────────────────────
+      // get_following_posts RPC: フォロー中のユーザーの投稿だけをDB側で絞り込む。
+      // 通常のクエリでは「フォロー中IDリスト → IN句」が必要で遅くなるため RPC が適切。
+      if (_showFollowingOnly && session != null) {
+        final params = <String, dynamic>{
+          'p_user_id': session.user.id,
+          'p_limit': _pageSize,
+        };
+        final rawData = await client.rpc('get_following_posts', params: params);
+        // Dart の dynamic キャスト: rpc() は dynamic を返すため List に変換
+        final dataList = List<Map<String, dynamic>>.from(
+            (rawData as List).map((e) => Map<String, dynamic>.from(e as Map)));
+
+        // いいね済みIDを取得してフラグをセット
+        Set<String> likedIds = {};
+        final postIds = dataList.map((e) => e['id'] as String).toList();
+        if (postIds.isNotEmpty) {
+          final likes = await client
+              .from('post_likes')
+              .select('post_id')
+              .eq('user_id', session.user.id)
+              .inFilter('post_id', postIds);
+          likedIds = (likes as List).map((e) => e['post_id'] as String).toSet();
+        }
+
+        final posts = dataList.map((map) {
+          // RPC の結果は users JOIN ではなくフラットな構造なので変換する
+          // Post.fromJson が期待する users ネスト構造に組み直す
+          final converted = Map<String, dynamic>.from(map);
+          converted['users'] = {
+            'display_name': converted.remove('display_name'),
+            'username':     converted.remove('username'),
+            'avatar_url':   converted.remove('avatar_url'),
+          };
+          return Post.fromJson(converted, isLiked: likedIds.contains(converted['id']));
+        }).toList();
+
+        _hasMore = posts.length >= _pageSize;
+        state = AsyncData(posts);
+        return;
+      }
+
+      // ── 通常クエリ（全件 or 施設フィルター）──────────────────────────────
       // users テーブルを JOIN して投稿者の表示名・アバターを取得
       // 施設IDフィルターが設定されている場合はサーバーサイドで絞り込む
       var query = client
@@ -102,7 +183,7 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
   /// 次ページを追加取得して既存リストに追記する（無限スクロール）
   ///
   /// カーソルベースページング: 現在のリスト末尾の `created_at` より古い投稿を取得する。
-  /// 重複防止のため、取得済みの投稿IDをフィルタリングする。
+  /// フォロー中フィルターが有効な場合も RPC を使いカーソルで追加取得する。
   Future<void> loadMore() async {
     if (_isLoadingMore || !_hasMore) return;
     final current = state.valueOrNull;
@@ -115,9 +196,46 @@ class PostFeedNotifier extends StateNotifier<AsyncValue<List<Post>>> {
 
     try {
       final session = _ref.read(sessionProvider);
-      // 末尾投稿の created_at より古い投稿を取得（カーソル）
       final lastCreatedAt = current.last.time;
 
+      // ── フォロー中フィルター有効時は RPC でページング ────────────────────
+      if (_showFollowingOnly && session != null) {
+        final params = <String, dynamic>{
+          'p_user_id': session.user.id,
+          'p_limit':   _pageSize,
+          'p_cursor':  lastCreatedAt,
+        };
+        final rawMore = await client.rpc('get_following_posts', params: params);
+        final moreList = List<Map<String, dynamic>>.from(
+            (rawMore as List).map((e) => Map<String, dynamic>.from(e as Map)));
+
+        Set<String> likedIds = {};
+        final postIds = moreList.map((e) => e['id'] as String).toList();
+        if (postIds.isNotEmpty) {
+          final likes = await client
+              .from('post_likes')
+              .select('post_id')
+              .eq('user_id', session.user.id)
+              .inFilter('post_id', postIds);
+          likedIds = (likes as List).map((e) => e['post_id'] as String).toSet();
+        }
+
+        final newPosts = moreList.map((map) {
+          final converted = Map<String, dynamic>.from(map);
+          converted['users'] = {
+            'display_name': converted.remove('display_name'),
+            'username':     converted.remove('username'),
+            'avatar_url':   converted.remove('avatar_url'),
+          };
+          return Post.fromJson(converted, isLiked: likedIds.contains(converted['id']));
+        }).toList();
+
+        _hasMore = newPosts.length >= _pageSize;
+        state = AsyncData([...current, ...newPosts]);
+        return;
+      }
+
+      // ── 通常クエリでのページング ─────────────────────────────────────────
       // 施設IDフィルターが設定されている場合はサーバーサイドで絞り込む
       var moreQuery = client
           .from('posts')

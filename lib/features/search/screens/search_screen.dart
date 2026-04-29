@@ -10,6 +10,8 @@ import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
+import 'package:yu_map/providers/favorites_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 // FacilitySortBy は facility_provider.dart 経由でエクスポートされているため
 // facility_service.dart を直接インポートする必要はない
 
@@ -332,6 +334,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               context,
               facilityAsync,
               hasActiveFilters,
+              params,
             ),
           ),
         ],
@@ -343,6 +346,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     BuildContext context,
     AsyncValue<List<Facility>> facilityAsync,
     bool hasActiveFilters,
+    FacilitySearchParams params,
   ) {
     // 初回ロード中（蓄積リストが空）はローディングを表示する。
     // 「もっと見る」の2ページ目以降は蓄積リストを表示しながら下にスピナーを出す。
@@ -370,24 +374,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
+    // フィルターなし（検索語・種別・その他）の場合はリスト先頭に「今週の人気」を表示
+    final showTrending = !hasActiveFilters && params.page == 0;
+
     return ListView.builder(
-      // 「もっと見る」ボタンと条件次第ではローディングの分を +1 する
-      itemCount: _accumulatedFacilities.length + 1,
+      // showTrending の場合はインデックス0に人気施設ウィジェットを挿入
+      itemCount: _accumulatedFacilities.length + (showTrending ? 2 : 1),
       itemBuilder: (context, i) {
-        // 最終アイテム: 「もっと見る」ボタン or ローディング or 「これ以上なし」
-        if (i == _accumulatedFacilities.length) {
+        // フィルターなし時: index 0 = 人気施設セクション
+        if (showTrending && i == 0) {
+          return _TrendingFacilitiesSection(
+            onFacilityTap: (facilityId) =>
+                Navigator.of(context).pushNamed('/facility', arguments: facilityId),
+          );
+        }
+
+        // showTrending の場合はインデックスを 1 ずらす
+        final listIndex = showTrending ? i - 1 : i;
+
+        // 最終アイテム: 「もっと見る」ボタン or ローディング
+        if (listIndex == _accumulatedFacilities.length) {
           return _buildFooter(facilityAsync.isLoading);
         }
-        final facility = _accumulatedFacilities[i];
+        final facility = _accumulatedFacilities[listIndex];
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FacilityListTile(
-              facility: facility,
-              onTap: () => Navigator.of(context).pushNamed(
-                '/facility',
-                arguments: facility.id,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: FacilityListTile(
+                    facility: facility,
+                    onTap: () => Navigator.of(context).pushNamed(
+                      '/facility',
+                      arguments: facility.id,
+                    ),
+                  ),
+                ),
+                // 地図で見る / お気に入り / 詳細を見る のポップアップメニュー
+                _FacilityPopupMenu(facility: facility),
+              ],
             ),
             const Divider(height: 1),
           ],
@@ -457,6 +483,150 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+}
+
+// ── 今週の人気施設セクション ─────────────────────────────────────────────────────
+
+/// 検索画面上部に表示する横スクロール可能な「今週の人気施設」カードリスト。
+/// trendingFacilitiesProvider から取得したデータを表示する。
+/// フィルターなし・ページ0のときのみ表示される。
+class _TrendingFacilitiesSection extends ConsumerWidget {
+  const _TrendingFacilitiesSection({required this.onFacilityTap});
+
+  final void Function(String facilityId) onFacilityTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trendingAsync = ref.watch(trendingFacilitiesProvider);
+
+    return trendingAsync.when(
+      // データなし or 空 → セクションを非表示
+      data: (facilities) {
+        if (facilities.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+              child: Row(
+                children: [
+                  const Text('🔥', style: TextStyle(fontSize: 16)),
+                  const SizedBox(width: 6),
+                  Text(
+                    '今週の人気施設',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 130,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                scrollDirection: Axis.horizontal,
+                itemCount: facilities.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) => _TrendingCard(
+                  facility: facilities[index],
+                  onTap: () => onFacilityTap(facilities[index].id),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                'すべての施設',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+          ],
+        );
+      },
+      // ロード中 → 小さなインジケーターだけ
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      // エラー → 非表示（UX を壊さない）
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// 人気施設1件分のコンパクトなカード（横スクロール用）。
+class _TrendingCard extends StatelessWidget {
+  const _TrendingCard({required this.facility, required this.onTap});
+
+  final Facility facility;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // 施設タイプ別アイコン
+    final icon = switch (facility.facilityType) {
+      'onsen' => '♨️',
+      'sauna' => '🧖',
+      'public_bath' => '🛁',
+      _ => '🏠',
+    };
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Card(
+        elevation: 2,
+        child: SizedBox(
+          width: 130,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // タイプアイコン
+                Text(icon, style: const TextStyle(fontSize: 24)),
+                const SizedBox(height: 4),
+                // 施設名（最大2行）
+                Text(
+                  facility.name,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                // 住所（1行）
+                if (facility.address != null && facility.address!.isNotEmpty)
+                  Text(
+                    facility.address!,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colorScheme.onSurface.withAlpha(140),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -763,6 +933,90 @@ class _SortChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+// ── 検索リスト用ポップアップメニュー ──────────────────────────────────────────
+
+/// 検索結果タイルの「⋮」ポップアップメニュー。
+/// 「地図で見る」「お気に入りに追加/解除」「詳細を見る」の3項目を提供する。
+/// ConsumerWidget にすることで isFavoriteProvider を watch できる。
+class _FacilityPopupMenu extends ConsumerWidget {
+  const _FacilityPopupMenu({required this.facility});
+
+  final Facility facility;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFavorite = ref.watch(isFavoriteProvider(facility.id));
+
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, color: Colors.grey, size: 20),
+      tooltip: 'メニュー',
+      onSelected: (value) async {
+        switch (value) {
+          case 'show_on_map':
+            ref.read(mapFlyToProvider.notifier).state = (
+              lat: facility.latitude,
+              lng: facility.longitude,
+            );
+            ref.read(homeTabIndexProvider.notifier).state = 0;
+          case 'toggle_favorite':
+            await ref
+                .read(favoritesProvider.notifier)
+                .toggle(facility.id);
+            if (!context.mounted) return;
+            final now = ref.read(isFavoriteProvider(facility.id));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(now ? 'お気に入りに追加しました' : 'お気に入りを解除しました'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          case 'open_detail':
+            Navigator.of(context).pushNamed(
+              '/facility',
+              arguments: facility.id,
+            );
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'show_on_map',
+          child: Row(
+            children: [
+              Icon(Icons.map_outlined, size: 18),
+              SizedBox(width: 8),
+              Text('地図で見る'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'toggle_favorite',
+          child: Row(
+            children: [
+              Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                size: 18,
+                color: isFavorite ? Colors.red : null,
+              ),
+              const SizedBox(width: 8),
+              Text(isFavorite ? 'お気に入りを解除' : 'お気に入りに追加'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'open_detail',
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 18),
+              SizedBox(width: 8),
+              Text('詳細を見る'),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

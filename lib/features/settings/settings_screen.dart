@@ -19,6 +19,8 @@ class SettingsScreen extends ConsumerWidget {
     // 管理者チェック（非同期。取得中はfalseとして扱う）
     final isAdminAsync = ref.watch(isAdminProvider);
     final isAdmin = isAdminAsync.valueOrNull ?? false;
+    // ログインユーザーのメールアドレス（プロフィール画面から移動。設定画面のみに表示）
+    final userAsync = ref.watch(currentUserProfileProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
@@ -47,6 +49,14 @@ class SettingsScreen extends ConsumerWidget {
           // ── Account section ────────────────────────────────────────────
           const _SectionHeader(label: 'アカウント'),
           if (isSignedIn) ...[
+            // ログイン中ユーザーのメールアドレスを表示（プライバシー保護のため設定画面のみ）
+            if (userAsync.valueOrNull?.email != null)
+              ListTile(
+                leading: const Icon(Icons.email_outlined),
+                title: const Text('メールアドレス'),
+                subtitle: Text(userAsync.value!.email!),
+                dense: true,
+              ),
             ListTile(
               leading: const Icon(Icons.person_outline),
               title: const Text('プロフィール'),
@@ -58,17 +68,6 @@ class SettingsScreen extends ConsumerWidget {
               title: const Text('ログアウト', style: TextStyle(color: Colors.red)),
               onTap: () => _showLogoutDialog(context, ref),
             ),
-            // Tier1 必須: App Store / Google Play 審査要件
-            // アカウントを持つユーザーはアプリ内から削除できなければならない
-            ListTile(
-              leading: const Icon(Icons.delete_forever, color: Colors.red),
-              title: const Text(
-                'アカウントを削除',
-                style: TextStyle(color: Colors.red),
-              ),
-              subtitle: const Text('すべてのデータが完全に削除されます'),
-              onTap: () => _showDeleteAccountDialog(context, ref),
-            ),
           ] else ...[
             ListTile(
               leading: const Icon(Icons.login),
@@ -78,6 +77,24 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ],
           const Divider(height: 1),
+
+          // ── 危険な操作セクション（アカウントを持つユーザーのみ表示）────────────
+          // Tier1 必須: App Store / Google Play 審査要件
+          // アカウントを持つユーザーはアプリ内から削除できなければならない
+          // ログアウトボタンと視覚的に分離して誤タップを防ぐ
+          if (isSignedIn) ...[
+            const _SectionHeader(label: '危険な操作'),
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text(
+                'アカウントを削除',
+                style: TextStyle(color: Colors.red),
+              ),
+              subtitle: const Text('すべてのデータが完全に削除されます'),
+              onTap: () => _showDeleteAccountDialog(context, ref),
+            ),
+            const Divider(height: 1),
+          ],
 
           // ── 管理者セクション（is_admin = true のユーザーのみ表示）─────────
           if (isAdmin) ...[
@@ -99,7 +116,8 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── テーマ section ─────────────────────────────────────────────
           // D-2対応: ユーザーがダーク/ライト/システムを選択できる
-          const _SectionHeader(label: '表示'),
+          // UX-V22対応: 「表示」→「外観」に変更してiOS/Android標準UIに合わせる
+          const _SectionHeader(label: '外観'),
           const _ThemeModeSelector(),
           const Divider(height: 1),
 

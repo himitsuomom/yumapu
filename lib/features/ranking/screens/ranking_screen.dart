@@ -10,7 +10,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/providers/follow_provider.dart';
 import 'package:yu_map/providers/ranking_provider.dart';
+
+// ランキング並び替えフィルターの表示順
+const _sortOptions = [
+  RankingSortBy.totalPoints,
+  RankingSortBy.explorerPoints,
+  RankingSortBy.socialPoints,
+  RankingSortBy.visitCount,
+];
 
 // ── ポイントルール定義 ─────────────────────────────────────────────────────────
 
@@ -56,14 +65,20 @@ const _titleMilestones = [
 
 // ── ランキング画面 ─────────────────────────────────────────────────────────────
 
-class RankingScreen extends ConsumerWidget {
+class RankingScreen extends ConsumerStatefulWidget {
   const RankingScreen({super.key});
+
+  @override
+  ConsumerState<RankingScreen> createState() => _RankingScreenState();
+}
+
+class _RankingScreenState extends ConsumerState<RankingScreen> {
 
   /// ポイント獲得ルールのダイアログを表示する（Task#3）
   void _showPointRulesDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Row(
           children: [
             Icon(Icons.emoji_events_outlined, color: Color(0xFF1565C0)),
@@ -151,7 +166,7 @@ class RankingScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('閉じる'),
           ),
         ],
@@ -160,8 +175,9 @@ class RankingScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final isSignedIn = ref.watch(isSignedInProvider);
+    final sortBy = ref.watch(rankingSortByProvider);
     final rankingAsync = ref.watch(rankingListProvider);
     final myRankingAsync = ref.watch(myRankingProvider);
 
@@ -202,6 +218,33 @@ class RankingScreen extends ConsumerWidget {
         },
         child: CustomScrollView(
           slivers: [
+            // ── ソート切り替えチップ ──────────────────────────────────────
+            SliverToBoxAdapter(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: Row(
+                  children: _sortOptions.map((option) {
+                    final isSelected = sortBy == option;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(option.label),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          if (selected) {
+                            ref
+                                .read(rankingSortByProvider.notifier)
+                                .state = option;
+                          }
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+
             // ── 自分の順位カード ─────────────────────────────────────────
             if (isSignedIn)
               SliverToBoxAdapter(
@@ -228,15 +271,18 @@ class RankingScreen extends ConsumerWidget {
                 return SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      // セクションヘッダー
+                      // セクションヘッダー（ソート種別を表示）
                       if (index == 0) {
-                        return const _SectionHeader(title: 'TOP 50');
+                        return _SectionHeader(
+                          title: 'TOP 50 — ${sortBy.label}順',
+                        );
                       }
                       final rank = index; // 1-indexed rank
                       final user = list[index - 1];
                       return _RankRow(
                         rank: rank,
                         rankedUser: user,
+                        sortBy: sortBy,
                       );
                     },
                     childCount: list.length + 1, // ヘッダー分 +1
@@ -424,10 +470,15 @@ class _SectionHeader extends StatelessWidget {
 // ── ランキング行 ──────────────────────────────────────────────────────────────
 
 class _RankRow extends StatelessWidget {
-  const _RankRow({required this.rank, required this.rankedUser});
+  const _RankRow({
+    required this.rank,
+    required this.rankedUser,
+    this.sortBy = RankingSortBy.totalPoints,
+  });
 
   final int rank;
   final RankedUser rankedUser;
+  final RankingSortBy sortBy;
 
   /// 他ユーザーのプロフィールをボトムシートで表示する（Task#5）
   void _showUserProfile(BuildContext context) {
@@ -481,19 +532,21 @@ class _RankRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            '${r.totalPoints} PT',
+            sortBy.trailingValue(rankedUser),
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 14,
             ),
           ),
-          Text(
-            '訪問 ${r.visitCount}',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: const Color(0xFF757575)),
-          ),
+          // ソートが訪問数以外の場合は訪問数をサブテキストで表示
+          if (sortBy != RankingSortBy.visitCount)
+            Text(
+              '訪問 ${r.visitCount}',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: const Color(0xFF757575)),
+            ),
         ],
       ),
     );
@@ -503,7 +556,7 @@ class _RankRow extends StatelessWidget {
 // ── ユーザープロフィール ボトムシート ─────────────────────────────────────────
 
 /// ランキング行タップ時に表示する他ユーザーのプロフィールシート（Task#5）
-class _UserProfileSheet extends StatelessWidget {
+class _UserProfileSheet extends ConsumerWidget {
   const _UserProfileSheet({
     required this.rankedUser,
     required this.rank,
@@ -513,8 +566,12 @@ class _UserProfileSheet extends StatelessWidget {
   final int rank;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final r = rankedUser.ranking;
+    final isSignedIn = ref.watch(isSignedInProvider);
+    final session = ref.watch(sessionProvider);
+    final isMe = session != null && session.user.id == rankedUser.userId;
+    final isFollowing = ref.watch(isFollowingProvider(rankedUser.userId));
 
     return SafeArea(
       child: Padding(
@@ -595,6 +652,53 @@ class _UserProfileSheet extends StatelessWidget {
                 _ProfileStat(label: '訪問数', value: r.visitCount.toString()),
               ],
             ),
+
+            // フォロー/アンフォローボタン（自分自身以外に表示）
+            if (!isMe) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: isSignedIn
+                    ? FilledButton.icon(
+                        icon: Icon(
+                          isFollowing
+                              ? Icons.person_remove_outlined
+                              : Icons.person_add_outlined,
+                          size: 18,
+                        ),
+                        label: Text(isFollowing ? 'フォロー解除' : 'フォローする'),
+                        style: isFollowing
+                            ? FilledButton.styleFrom(
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.onSurface,
+                              )
+                            : null,
+                        onPressed: () async {
+                          try {
+                            if (isFollowing) {
+                              await ref
+                                  .read(followingIdsProvider.notifier)
+                                  .unfollow(rankedUser.userId);
+                            } else {
+                              await ref
+                                  .read(followingIdsProvider.notifier)
+                                  .follow(rankedUser.userId);
+                            }
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('操作に失敗しました。もう一度お試しください。')),
+                              );
+                            }
+                          }
+                        },
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
 
             const SizedBox(height: 16),
           ],

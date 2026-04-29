@@ -82,10 +82,40 @@ class ProfileScreen extends ConsumerWidget {
         Center(
           child: Column(
             children: [
-              UserAvatarWithCrown(
-                isPremium: user?.isPremium ?? false,
-                radius: 48,
-                avatarUrl: user?.avatarUrl,
+              // アバターをタップで編集画面へ遷移する（標準的なSNSのUX）
+              GestureDetector(
+                onTap: user != null
+                    ? () => Navigator.of(context)
+                        .pushNamed('/edit-profile', arguments: user)
+                    : null,
+                child: Stack(
+                  children: [
+                    UserAvatarWithCrown(
+                      isPremium: user?.isPremium ?? false,
+                      radius: 48,
+                      avatarUrl: user?.avatarUrl,
+                    ),
+                    // カメラアイコンをアバター右下に重ねて「変更可能」を示す
+                    // UX-V24-6: 14px → 18px に拡大。初見ユーザーが変更可能と気づきやすくなる。
+                    if (user != null)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF1565C0),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               Text(
@@ -95,15 +125,8 @@ class ProfileScreen extends ConsumerWidget {
                     .titleLarge
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
-              if (user?.email != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  user!.email!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF757575),
-                      ),
-                ),
-              ],
+              // メールアドレスはプライバシー保護のため設定画面のみに表示する。
+              // プロフィール画面ではユーザー名（displayName）のみ表示する。
               if (user?.isPremium == true) ...[
                 const SizedBox(height: 8),
                 const PremiumChip(),
@@ -119,13 +142,14 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: 16),
 
         // ── Stats cards ────────────────────────────────────────────────
-        // UX-V7-1対応: 訪問数カードをタップすると全訪問履歴画面へ遷移する
+        // UX-V7-1対応: チェックイン数カードをタップすると全訪問履歴画面へ遷移する
+        // 「訪問数」→「チェックイン数」に統一（ゲームフィール強化）
         Row(
           children: [
             Expanded(
               child: _StatCard(
-                icon: Icons.place_outlined,
-                label: '訪問数',
+                icon: Icons.check_circle_outline,
+                label: 'チェックイン数',
                 value: visitCountAsync.isLoading ? '…' : '$visitCount',
                 onTap: visitCount > 0
                     ? () => Navigator.of(context)
@@ -213,10 +237,10 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: 24),
         _PlansLinkCard(plansAsync: plansAsync),
 
-        // ── みんなの投稿（フィード）へのリンク ─────────────────────────
-        // G-1対応: フィードがボトムナビから消えたため、プロフィールから1タップで開ける。
+        // ── ランキングへのリンク ────────────────────────────────────
+        // v41更新: フィードがボトムナビに昇格したため、代わりにランキングを案内。
         const SizedBox(height: 12),
-        const _FeedLinkCard(),
+        const _RankingLinkCard(),
 
         // ── Edit profile / Settings links ──────────────────────────────
         const SizedBox(height: 12),
@@ -484,34 +508,35 @@ class _GamificationCards extends ConsumerWidget {
 // ── フィードリンクカード ───────────────────────────────────────────────────────
 /// G-1対応: フィードがボトムナビから外れたため、プロフィール画面からのアクセス導線。
 /// _PlansLinkCard と同じスタイルで統一する。
-class _FeedLinkCard extends StatelessWidget {
-  const _FeedLinkCard();
+// v41更新: フィードはボトムナビに昇格したため、ランキングリンクカードに置き換え。
+class _RankingLinkCard extends StatelessWidget {
+  const _RankingLinkCard();
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: InkWell(
-        onTap: () => Navigator.of(context).pushNamed('/feed'),
+        onTap: () => Navigator.of(context).pushNamed('/ranking'),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              const Icon(Icons.dynamic_feed_outlined),
+              const Icon(Icons.leaderboard_outlined),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'みんなの投稿',
+                      'ランキング',
                       style: Theme.of(context)
                           .textTheme
                           .bodyMedium
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      '湯めぐり仲間の最新投稿をチェック',
+                      '全国の温泉ランキングをチェック',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.grey[600],
                           ),

@@ -14,17 +14,21 @@ import 'package:yu_map/domain/entities/review.dart';
 import 'package:yu_map/features/facility/screens/facility_report_screen.dart';
 import 'package:yu_map/features/facility/screens/owner_facility_edit_screen.dart';
 import 'package:yu_map/features/facility/screens/owner_registration_screen.dart';
+import 'package:yu_map/features/facility/widgets/add_to_plan_sheet.dart';
+import 'package:yu_map/features/facility/widgets/facility_amenity_section.dart';
+import 'package:yu_map/features/facility/widgets/facility_info_section.dart';
+import 'package:yu_map/features/facility/widgets/facility_rating_bar.dart';
 import 'package:yu_map/features/facility/widgets/review_card.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
-import 'package:yu_map/models/onsen_plan.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
-import 'package:yu_map/providers/plan_provider.dart';
 import 'package:yu_map/providers/review_provider.dart';
 import 'package:yu_map/providers/visit_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 import 'package:yu_map/services/analytics_service.dart';
 import 'package:yu_map/services/checkin_service.dart';
+import 'package:yu_map/services/review_service.dart';
 
 class FacilityDetailScreen extends ConsumerStatefulWidget {
   const FacilityDetailScreen({super.key, required this.facilityId});
@@ -111,7 +115,11 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
     if (mounted) setState(() => _reviewInitialLoading = false);
   }
 
-  /// 指定ページのレビューを Supabase から取得し [_reviews] に追記する。
+  /// 指定ページのレビューを ReviewService 経由で取得し [_reviews] に追記する。
+  ///
+  /// 直接 Supabase を呼ぶ代わりに ReviewService.fetchPage() を使うことで:
+  ///   - ウィジェットがデータ層に直接依存しない（責務の分離）
+  ///   - テスト時に ReviewService をモックしやすくなる
   Future<void> _fetchReviewPage(int page) async {
     if (_reviewLoadingMore) return;
     if (!mounted) return;
@@ -119,26 +127,15 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
     setState(() => _reviewLoadingMore = true);
 
     final client = ref.read(supabaseClientProvider);
-    if (client == null) {
-      if (mounted) setState(() => _reviewLoadingMore = false);
-      return;
-    }
-
-    final from = page * AppConstants.pageSize;
-    final to = from + AppConstants.pageSize - 1;
 
     try {
-      final rows = await client
-          .from('reviews')
-          .select('*, users!user_id(display_name, avatar_url, is_premium)')
-          .eq('facility_id', widget.facilityId)
-          .order('created_at', ascending: false)
-          .range(from, to) as List;
+      final newReviews = await ReviewService.fetchPage(
+        client: client,
+        facilityId: widget.facilityId,
+        page: page,
+      );
 
       if (!mounted) return;
-
-      final newReviews =
-          rows.map((r) => Review.fromJson(r as Map<String, dynamic>)).toList();
 
       setState(() {
         _reviews.addAll(newReviews);
@@ -191,6 +188,24 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
     final url = '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
     final text = '${facility.name}\n$url';
     Share.share(text, subject: '湯マップ — ${facility.name}');
+  }
+
+  // ── 地図タブへ遷移 ────────────────────────────────────────────────────────
+  // 施設詳細から「地図で確認」をタップした時の処理。
+  // 1. mapFlyToProvider に座標をセットして MapScreen にカメラ移動を伝える
+  // 2. homeTabIndexProvider を 0（地図タブ）に切り替える
+  // 3. この詳細画面を閉じてホームに戻る
+
+  void _goToMapTab(Facility facility) {
+    // MapScreen がこのプロバイダーを watch し、非 null のときカメラを移動する
+    ref.read(mapFlyToProvider.notifier).state = (
+      lat: facility.latitude,
+      lng: facility.longitude,
+    );
+    // ボトムナビを地図タブに切り替える（favorites_screen.dart と同じパターン）
+    ref.read(homeTabIndexProvider.notifier).state = 0;
+    // 施設詳細画面（pushNamed で積まれている）を閉じてホームシェルに戻る
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   // ── Check-in dialog ───────────────────────────────────────────────────────
@@ -248,14 +263,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   // ── Plan bottom sheet ─────────────────────────────────────────────────────
 
   Future<void> _showAddToPlanSheet(Facility facility) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => _AddToPlanSheet(facility: facility),
-    );
+    await showAddToPlanSheet(context, facility);
   }
 
   // ── Review sheet ──────────────────────────────────────────────────────────
@@ -541,18 +549,21 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
 
           // ── UX-V13-2: 平均評価サマリー（施設名直下に大きく表示）────────
           SliverToBoxAdapter(
-            child: _RatingSummaryBar(facilityId: facility.id),
+            child: FacilityRatingBar(facilityId: facility.id),
           ),
 
           // ── Facility info ──────────────────────────────────────────────
           SliverToBoxAdapter(
-            child: _FacilityInfoSection(
+            child: FacilityInfoSection(
               facility: facility,
               onPhone: facility.phone != null
                   ? () => _launchPhone(facility.phone!)
                   : null,
               onWebsite: facility.website != null
                   ? () => _launchUrl(facility.website!)
+                  : null,
+              onGoToMap: facility.hasValidLocation
+                  ? () => _goToMapTab(facility)
                   : null,
             ),
           ),
@@ -612,7 +623,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
 
           // ── Amenities ─────────────────────────────────────────────────
           SliverToBoxAdapter(
-            child: _AmenitySection(facilityId: facility.id),
+            child: FacilityAmenitySection(facilityId: facility.id),
           ),
 
           // ── オーナー専用: 施設情報編集ボタン（承認済みオーナーのみ表示）──
@@ -721,10 +732,55 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
               ),
             )
           else if (_reviews.isEmpty)
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: Text('まだレビューはありません')),
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+                child: Column(
+                  children: [
+                    Icon(Icons.rate_review_outlined,
+                        size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 12),
+                    Text(
+                      'まだクチコミがありません',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'あなたが最初にクチコミを書いてみましょう！',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (isSignedIn)
+                      FilledButton.icon(
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('最初のクチコミを書く'),
+                        onPressed: () => _showReviewSheet(facility),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                        ),
+                      )
+                    else
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.login, size: 18),
+                        label: const Text('ログインしてクチコミを書く'),
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/login'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             )
           else
@@ -844,570 +900,3 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   }
 }
 
-// ── Rating summary bar ────────────────────────────────────────────────────────
-
-/// UX-V13-2: 施設名直下に平均評価スコアと件数を大きく表示するウィジェット。
-///
-/// facilityReviewSummaryProvider でサーバーサイドAVGを取得し、
-/// ★評価を横並びで見やすく表示する。0件の場合は非表示。
-class _RatingSummaryBar extends ConsumerWidget {
-  const _RatingSummaryBar({required this.facilityId});
-
-  final String facilityId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final summaryAsync = ref.watch(facilityReviewSummaryProvider(facilityId));
-
-    return summaryAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (summary) {
-        if (summary.count == 0) return const SizedBox.shrink();
-
-        final avg = summary.avgRating;
-        final count = summary.count;
-
-        return Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerLowest,
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.shade200),
-            ),
-          ),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              // 星アイコン（塗りつぶし）
-              const Icon(Icons.star, color: Color(0xFFFFC107), size: 22),
-              const SizedBox(width: 6),
-              // 平均スコア（大きめのテキスト）
-              Text(
-                avg.toStringAsFixed(1),
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFFFFC107),
-                    ),
-              ),
-              const SizedBox(width: 8),
-              // 星を5個並べる（半星対応）
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(5, (i) {
-                  final filled = avg - i;
-                  if (filled >= 1) {
-                    return const Icon(Icons.star,
-                        color: Color(0xFFFFC107), size: 16);
-                  } else if (filled >= 0.5) {
-                    return const Icon(Icons.star_half,
-                        color: Color(0xFFFFC107), size: 16);
-                  } else {
-                    return const Icon(Icons.star_border,
-                        color: Color(0xFFFFC107), size: 16);
-                  }
-                }),
-              ),
-              const SizedBox(width: 8),
-              // 件数テキスト
-              Text(
-                '($count件)',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ── showAddToPlanSheet (public helper) ───────────────────────────────────────
-
-/// UX-V13-5: お気に入り画面など外部から「プランに追加」シートを呼び出す公開ヘルパー。
-///
-/// _AddToPlanSheet はこのファイル内のプライベートクラスなので、
-/// 他の画面はこの関数を通じてシートを表示する。
-Future<void> showAddToPlanSheet(
-    BuildContext context, Facility facility) async {
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
-    builder: (_) => _AddToPlanSheet(facility: facility),
-  );
-}
-
-// ── Facility info section ─────────────────────────────────────────────────────
-
-class _FacilityInfoSection extends StatelessWidget {
-  const _FacilityInfoSection({
-    required this.facility,
-    this.onPhone,
-    this.onWebsite,
-  });
-
-  final Facility facility;
-  final VoidCallback? onPhone;
-  final VoidCallback? onWebsite;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Facility type chip
-          if (facility.hasFacilityType) ...[
-            Chip(
-              label: Text(facility.facilityTypeJa),
-              visualDensity: VisualDensity.compact,
-            ),
-            const SizedBox(height: 8),
-          ],
-          // Address
-          if (facility.address != null && facility.address!.isNotEmpty)
-            _InfoRow(
-              icon: Icons.location_on_outlined,
-              text: facility.address!,
-              textStyle: textTheme.bodyMedium,
-            ),
-          // Opening hours
-          if (facility.openingHours != null)
-            _InfoRow(
-              icon: Icons.access_time_outlined,
-              text: facility.openingHours!,
-              textStyle: textTheme.bodyMedium,
-            ),
-          // Price
-          if (facility.price != null && facility.price! > 0)
-            _InfoRow(
-              icon: Icons.payments_outlined,
-              text: '入浴料 ¥${facility.price}',
-              textStyle: textTheme.bodyMedium,
-            ),
-          // Phone
-          if (facility.phone != null)
-            _InfoRow(
-              icon: Icons.phone_outlined,
-              text: facility.phone!,
-              textStyle: textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                decoration: TextDecoration.underline,
-              ),
-              onTap: onPhone,
-            ),
-          // Website
-          if (facility.website != null)
-            _InfoRow(
-              icon: Icons.language_outlined,
-              text: facility.website!,
-              textStyle: textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                decoration: TextDecoration.underline,
-              ),
-              onTap: onWebsite,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Amenity section ───────────────────────────────────────────────────────────
-
-/// 施設詳細のアメニティ（設備・泉質）セクション。
-/// facility_amenities テーブルのデータを Wrap で表示する。
-class _AmenitySection extends ConsumerWidget {
-  const _AmenitySection({required this.facilityId});
-
-  final String facilityId;
-
-  // カテゴリごとのアイコン定義
-  IconData _iconForCategory(String category) {
-    switch (category) {
-      case 'spring_type':
-        return Icons.water;
-      case 'bath':
-        return Icons.hot_tub;
-      case 'sauna':
-        return Icons.local_fire_department_outlined;
-      case 'facility':
-        return Icons.local_parking;
-      case 'policy':
-        return Icons.info_outline;
-      case 'water':
-        return Icons.hot_tub;
-      default:
-        return Icons.check_circle_outline;
-    }
-  }
-
-  Color _colorForCategory(String category, BuildContext context) {
-    switch (category) {
-      case 'spring_type':
-        return Theme.of(context).colorScheme.primary;
-      case 'bath':
-        return const Color(0xFF0277BD);
-      case 'sauna':
-        return const Color(0xFFE65100);
-      case 'water':
-        return const Color(0xFF1565C0);
-      default:
-        return Theme.of(context).colorScheme.secondary;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final amenitiesAsync = ref.watch(facilityAmenitiesProvider(facilityId));
-
-    return amenitiesAsync.when(
-      data: (amenities) {
-        if (amenities.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '設備・泉質',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: amenities.map((a) {
-                  final color = _colorForCategory(a.category, context);
-                  return Chip(
-                    avatar: Icon(
-                      _iconForCategory(a.category),
-                      size: 16,
-                      color: color,
-                    ),
-                    label: Text(
-                      a.nameJa,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: color,
-                      ),
-                    ),
-                    backgroundColor: color.withAlpha(26),
-                    side: BorderSide(color: color.withAlpha(77)),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 8),
-              const Divider(height: 1),
-            ],
-          ),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.icon,
-    required this.text,
-    this.textStyle,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String text;
-  final TextStyle? textStyle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 18, color: const Color(0xFF757575)),
-            const SizedBox(width: 8),
-            Expanded(child: Text(text, style: textStyle)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Add to plan bottom sheet ──────────────────────────────────────────────────
-
-/// 湯めぐりプランに施設を追加するボトムシート。
-/// 既存プラン一覧を表示し、タップで追加。新規プラン作成フォームも含む。
-class _AddToPlanSheet extends ConsumerStatefulWidget {
-  const _AddToPlanSheet({required this.facility});
-
-  final Facility facility;
-
-  @override
-  ConsumerState<_AddToPlanSheet> createState() => _AddToPlanSheetState();
-}
-
-class _AddToPlanSheetState extends ConsumerState<_AddToPlanSheet> {
-  bool _showCreateForm = false;
-  final _titleCtrl = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final plansAsync = ref.watch(myPlansProvider);
-    final planState = ref.watch(planNotifierProvider);
-    final isLoading = planState is AsyncLoading;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // ドラッグハンドル
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
-          Text(
-            '湯めぐりプランに追加',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-
-          // プラン一覧
-          plansAsync.when(
-            data: (plans) {
-              if (plans.isEmpty && !_showCreateForm) {
-                return Column(
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'プランがまだありません。\n新しいプランを作成しましょう！',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('新しいプランを作成'),
-                      onPressed: () =>
-                          setState(() => _showCreateForm = true),
-                    ),
-                  ],
-                );
-              }
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // UX-4修正: .take(5) を削除して全件表示（スクロール対応）
-                  ...plans.map((plan) {
-                    final alreadyAdded =
-                        plan.containsFacility(widget.facility.id);
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.hot_tub_outlined),
-                      title: Text(plan.title),
-                      subtitle: Text(
-                        '${plan.facilityIds.length}施設',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      trailing: alreadyAdded
-                          ? const Icon(Icons.check_circle,
-                              color: Colors.green)
-                          : const Icon(Icons.add_circle_outline),
-                      onTap: alreadyAdded || isLoading
-                          ? null
-                          : () => _addToPlan(plan),
-                    );
-                  }),
-
-                  const Divider(height: 24),
-
-                  // 新規プラン作成ボタン
-                  if (!_showCreateForm)
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('新しいプランを作成'),
-                      onPressed: () =>
-                          setState(() => _showCreateForm = true),
-                    ),
-                ],
-              );
-            },
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(),
-              ),
-            ),
-            error: (_, __) => const Text('プランの取得に失敗しました'),
-          ),
-
-          // 新規プラン作成フォーム
-          if (_showCreateForm) ...[
-            const SizedBox(height: 16),
-            Form(
-              key: _formKey,
-              child: TextFormField(
-                controller: _titleCtrl,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  labelText: 'プラン名',
-                  hintText: '例: 東京銭湯めぐり',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'プラン名を入力してください' : null,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => setState(() => _showCreateForm = false),
-                    child: const Text('キャンセル'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: isLoading ? null : _createPlanAndAdd,
-                    child: isLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('作成して追加'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Future<void> _addToPlan(OnsenPlan plan) async {
-    await ref.read(planNotifierProvider.notifier).addFacilityToPlan(
-          planId: plan.id,
-          facilityId: widget.facility.id,
-          currentFacilityIds: plan.facilityIds,
-        );
-
-    if (!mounted) return;
-
-    final state = ref.read(planNotifierProvider);
-    if (state is AsyncError) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('追加に失敗しました: ${state.error}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // プロバイダーを更新してリストを再取得
-    ref.invalidate(myPlansProvider);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「${plan.title}」に追加しました'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    Navigator.of(context).pop();
-  }
-
-  Future<void> _createPlanAndAdd() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-
-    final newPlan = await ref.read(planNotifierProvider.notifier).createPlan(
-          title: _titleCtrl.text.trim(),
-        );
-
-    if (!mounted) return;
-    if (newPlan == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('プランの作成に失敗しました'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // 作成したプランに施設を追加
-    await ref.read(planNotifierProvider.notifier).addFacilityToPlan(
-          planId: newPlan.id,
-          facilityId: widget.facility.id,
-          currentFacilityIds: newPlan.facilityIds,
-        );
-
-    if (!mounted) return;
-
-    ref.invalidate(myPlansProvider);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「${newPlan.title}」を作成して追加しました'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    Navigator.of(context).pop();
-  }
-}

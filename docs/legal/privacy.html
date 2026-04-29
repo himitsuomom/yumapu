@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>プライバシーポリシー | 湯マップ</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+      font-size: 15px;
+      line-height: 1.8;
+      color: #333;
+      background: #f8f9fa;
+    }
+    header {
+      background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+      color: white;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    header .logo { font-size: 28px; margin-bottom: 6px; }
+    header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    header .updated { font-size: 13px; opacity: 0.85; }
+    .container { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+    .intro {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 28px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+      font-size: 14px;
+      color: #555;
+    }
+    section {
+      background: white;
+      border-radius: 12px;
+      padding: 28px 24px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    section h2 {
+      font-size: 17px;
+      font-weight: 700;
+      color: #c62828;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #ffcdd2;
+    }
+    section h2::before { content: '§ '; opacity: .5; }
+    p { margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+    ul { margin: 8px 0 12px 20px; }
+    li { margin-bottom: 6px; }
+    .highlight {
+      background: #fff8f8;
+      border-left: 4px solid #e53935;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin: 12px 0;
+    }
+    .contact-box {
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-top: 12px;
+    }
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: #999;
+      font-size: 13px;
+    }
+    a { color: #e53935; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">♨ 湯マップ</div>
+  <h1>プライバシーポリシー</h1>
+  <div class="updated">最終更新日：2026年4月28日</div>
+</header>
+
+<div class="container">
+
+  <div class="intro">
+    湯マップ（以下「本アプリ」）をご利用いただきありがとうございます。本プライバシーポリシーは、本アプリが収集する情報の種類、その利用目的、管理方法について説明するものです。本アプリをご利用になることで、このポリシーに同意したものとみなされます。
+  </div>
+
+  <section>
+    <h2>収集する情報</h2>
+    <p>本アプリは以下の情報を収集することがあります。</p>
+    <ul>
+      <li><strong>アカウント情報</strong>：メールアドレス、表示名（ニックネーム）</li>
+      <li><strong>位置情報</strong>：現在地周辺の温泉・銭湯・サウナを表示するため（アプリ使用中のみ）</li>
+      <li><strong>投稿コンテンツ</strong>：クチコミ、評価、写真、チェックイン履歴</li>
+      <li><strong>利用状況データ</strong>：アプリのクラッシュログ、エラーレポート（Sentry）、利用分析（Firebase Analytics）</li>
+    </ul>
+    <div class="highlight">
+      位置情報はアプリ起動中にのみ使用し、サーバーには保存しません。バックグラウンドでの位置追跡は行いません。
+    </div>
+  </section>
+
+  <section>
+    <h2>情報の利用目的</h2>
+    <p>収集した情報は以下の目的のために利用します。</p>
+    <ul>
+      <li>現在地周辺の施設検索・表示</li>
+      <li>アカウントの識別・認証</li>
+      <li>クチコミ、写真、チェックイン履歴の保存・表示</li>
+      <li>ランキング・バッジ機能の提供</li>
+      <li>アプリの品質改善・バグ修正</li>
+      <li>不正利用・スパム投稿の防止</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>情報の共有・提供</h2>
+    <p>本アプリは、以下のサービスと情報を共有することがあります。</p>
+    <ul>
+      <li><strong>Supabase</strong>（データベース・認証サービス）：ユーザーデータおよびコンテンツを保存</li>
+      <li><strong>OpenStreetMap / Nominatim</strong>（地図表示・住所検索）：地図タイルの取得および施設の住所検索クエリの送信</li>
+      <li><strong>Firebase Analytics</strong>（Google LLC）：アプリ使用状況の分析</li>
+      <li><strong>Sentry</strong>：クラッシュレポートとエラーログ</li>
+      <li><strong>Google AdMob / RevenueCat</strong>（有効化時のみ）：広告配信・課金処理</li>
+    </ul>
+    <p>法令により開示が求められる場合を除き、第三者への個人情報の販売・提供は行いません。</p>
+  </section>
+
+  <section>
+    <h2>データの保存とセキュリティ</h2>
+    <p>ユーザーデータはSupabase（PostgreSQL）に保存され、行レベルセキュリティ（RLS）によって保護されています。自分の投稿は自分のアカウントでのみ編集・削除できます。</p>
+    <p>通信はHTTPS（TLS）で暗号化されています。パスワードはSupabase Authによりハッシュ化して保存され、平文で保存することはありません。</p>
+  </section>
+
+  <section>
+    <h2>ユーザーの権利</h2>
+    <p>ユーザーは以下の権利を有します。</p>
+    <ul>
+      <li><strong>閲覧・修正</strong>：プロフィール画面から表示名の変更が可能です</li>
+      <li><strong>削除</strong>：設定画面の「アカウントを削除」から全データを削除できます。削除は取り消せませんのでご注意ください</li>
+      <li><strong>投稿削除</strong>：クチコミ・写真は個別に削除可能です</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>お子様のプライバシー</h2>
+    <p>本アプリは13歳未満のお子様を対象としていません。13歳未満の方の個人情報と知りながら収集することはありません。該当する情報の収集が判明した場合は速やかに削除いたします。</p>
+  </section>
+
+  <section>
+    <h2>Cookie・トラッキング</h2>
+    <p>本アプリはネイティブモバイルアプリのためウェブCookieは使用しません。Firebase AnalyticsはデバイスIDを用いた匿名の利用統計を収集します。設定からデータ収集をオプトアウトすることは、デバイスの広告設定から行えます。</p>
+  </section>
+
+  <section>
+    <h2>ポリシーの変更</h2>
+    <p>本ポリシーを変更する場合、アプリ内通知またはアプリストアのリリースノートでお知らせします。重要な変更の場合はアプリ起動時にお知らせすることがあります。</p>
+    <p>変更後も継続して本アプリをご利用になった場合、変更後のポリシーに同意したものとみなします。</p>
+  </section>
+
+  <section>
+    <h2>お問い合わせ</h2>
+    <p>プライバシーポリシーに関するご質問・ご意見は以下までお寄せください。</p>
+    <div class="contact-box">
+      <strong>湯マップ サポート</strong><br>
+      メール：<a href="mailto:himitsu.ichifirst@gmail.com">himitsu.ichifirst@gmail.com</a>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  &copy; 2026 湯マップ. All rights reserved.<br>
+  <a href="terms.html">利用規約</a>
+</footer>
+</body>
+</html>

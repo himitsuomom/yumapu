@@ -15,6 +15,7 @@ import 'package:yu_map/features/feed/screens/create_post_screen.dart';
 import 'package:yu_map/features/feed/screens/post_detail_screen.dart';
 import 'package:yu_map/models/post.dart';
 import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/providers/follow_provider.dart';
 import 'package:yu_map/providers/post_provider.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
@@ -24,8 +25,13 @@ class FeedScreen extends ConsumerStatefulWidget {
   ConsumerState<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends ConsumerState<FeedScreen> {
+class _FeedScreenState extends ConsumerState<FeedScreen>
+    with TickerProviderStateMixin {
   final _scrollController = ScrollController();
+
+  /// タブコントローラー（「すべて」「フォロー中」の2タブ）。
+  /// TickerProviderStateMixin = タブアニメーションを動かすための仕組み。
+  late final TabController _tabController;
 
   /// 施設絞り込みフィルター。null = 絞り込みなし（全件表示）。
   /// 施設タグをタップすると設定され、フィルターチップの × で解除する。
@@ -34,19 +40,52 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   /// 施設絞り込み中の施設ID（施設詳細へのナビゲーション用）。
   String? _facilityFilterId;
 
+  /// 現在のソート順（新しい順 / 人気順）。
+  PostFeedSortBy _sortBy = PostFeedSortBy.newest;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    // タブが切り替わったときにフォロー中フィルターを更新する
+    _tabController.addListener(_onTabChanged);
     // スクロールが末尾付近（200px以内）に達したら追加読み込みを実行する
     _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    _tabController
+      ..removeListener(_onTabChanged)
+      ..dispose();
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
     super.dispose();
+  }
+
+  /// タブ切り替え時の処理
+  ///
+  /// index 0 = すべて（フォロー中フィルターOFF）
+  /// index 1 = フォロー中（フォロー中フィルターON）
+  /// ただし index 1 はログイン済みのみ有効。未ログイン時はタブを戻す。
+  void _onTabChanged() {
+    if (!_tabController.indexIsChanging) return;
+    final isSignedIn = ref.read(isSignedInProvider);
+    if (_tabController.index == 1 && !isSignedIn) {
+      // 未ログイン時は「すべて」タブに戻してログイン促進
+      _tabController.animateTo(0);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('フォロー中の投稿を見るにはログインが必要です'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    ref.read(postFeedProvider.notifier).setFollowingOnlyFilter(
+          _tabController.index == 1,
+        );
   }
 
   void _onScroll() {
@@ -99,18 +138,38 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('フィード'),
-        // 投稿ボタンは FAB だけに統一。AppBar のアイコンは削除。
+        // 「すべて」「フォロー中」のタブをAppBar下部に配置する。
+        // TabBar = 画面上部でコンテンツを切り替えるタブUI。
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'すべて'),
+            Tab(text: 'フォロー中'),
+          ],
+        ),
       ),
       body: feedAsync.when(
         data: (allPosts) {
           // サーバーサイドフィルタリング済みのため、ローカルフィルタリング不要
           final posts = allPosts;
+          final isFollowingTab = notifier.showFollowingOnly;
 
           if (allPosts.isEmpty) {
-            return const _EmptyFeedView();
+            return isFollowingTab
+                ? const _EmptyFollowingFeedView()
+                : const _EmptyFeedView();
           }
           return Column(
             children: [
+              // ── ソートバー（新しい順 / 人気順）────────────────────────────
+              _SortBar(
+                current: _sortBy,
+                onChanged: (sortBy) {
+                  setState(() => _sortBy = sortBy);
+                  ref.read(postFeedProvider.notifier).setSortOrder(sortBy);
+                },
+              ),
+
               // ── 施設絞り込みチップ（絞り込み中のみ表示）──────────────────
               if (_facilityFilter != null)
                 Container(
@@ -239,6 +298,22 @@ class _PostCard extends ConsumerWidget {
 
   static final _dateFormat = DateFormat('yyyy/MM/dd HH:mm');
 
+  /// 投稿者のプロフィール情報をボトムシートで表示する。
+  /// ランキング画面と同じ感覚でユーザー情報にアクセスできる。
+  void _showAuthorProfile(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _AuthorProfileSheet(
+        userId: post.userId,
+        userName: post.user,
+        avatarUrl: post.avatar,
+      ),
+    );
+  }
+
   /// 削除確認ダイアログを表示し、OKなら投稿を削除する
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
@@ -354,24 +429,31 @@ class _PostCard extends ConsumerWidget {
           // ── ヘッダー（アバター・名前・日時・削除メニュー） ────────────
           Row(
             children: [
-              _PostAvatar(avatarUrl: post.avatar),
+              // 投稿者アバター・名前タップ → ユーザープロフィールシートを表示
+              GestureDetector(
+                onTap: () => _showAuthorProfile(context),
+                child: _PostAvatar(avatarUrl: post.avatar),
+              ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      post.user,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      formattedTime,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF757575),
+                child: GestureDetector(
+                  onTap: () => _showAuthorProfile(context),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.user,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    ),
-                  ],
+                      Text(
+                        formattedTime,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF757575),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               // 自分の投稿だけ「…」メニューを表示（編集・削除）
@@ -665,6 +747,44 @@ class _EmptyFeedView extends ConsumerWidget {
   }
 }
 
+// ── フォロー中タブ・投稿なし表示 ─────────────────────────────────────────────
+
+/// フォロー中タブで投稿が0件の場合に表示するウィジェット。
+/// 「まだ誰もフォローしていない」または「フォロー中の人が未投稿」の2ケースをカバー。
+class _EmptyFollowingFeedView extends StatelessWidget {
+  const _EmptyFollowingFeedView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('👥', style: TextStyle(fontSize: 64)),
+            const SizedBox(height: 16),
+            Text(
+              'フォロー中の投稿はありません',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'ランキングやフィードの投稿者プロフィールから\nユーザーをフォローしてみましょう',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: const Color(0xFF757575)),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── 施設絞り込み中・該当投稿なし表示 ─────────────────────────────────────────
 
 /// 施設絞り込み中だが該当する投稿がない場合に表示するウィジェット。
@@ -698,6 +818,283 @@ class _FacilityEmptyView extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── ソートバー ─────────────────────────────────────────────────────────────────
+
+/// フィード上部のソート切り替えバー（新しい順 / 人気順）。
+///
+/// ChoiceChip を横スクロールで並べる。
+/// 選択中のチップはテーマのプライマリカラーで強調する。
+class _SortBar extends StatelessWidget {
+  const _SortBar({required this.current, required this.onChanged});
+
+  final PostFeedSortBy current;
+  final void Function(PostFeedSortBy) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          _SortChip(
+            label: '新しい順',
+            icon: Icons.schedule,
+            selected: current == PostFeedSortBy.newest,
+            onTap: () => onChanged(PostFeedSortBy.newest),
+          ),
+          const SizedBox(width: 8),
+          _SortChip(
+            label: '人気順',
+            icon: Icons.favorite,
+            selected: current == PostFeedSortBy.popular,
+            onTap: () => onChanged(PostFeedSortBy.popular),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SortChip extends StatelessWidget {
+  const _SortChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ChoiceChip(
+      avatar: Icon(
+        icon,
+        size: 14,
+        color: selected
+            ? theme.colorScheme.onPrimary
+            : theme.colorScheme.onSurfaceVariant,
+      ),
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      labelStyle: TextStyle(
+        fontSize: 12,
+        color: selected
+            ? theme.colorScheme.onPrimary
+            : theme.colorScheme.onSurfaceVariant,
+      ),
+      selectedColor: theme.colorScheme.primary,
+      backgroundColor: Colors.transparent,
+      side: BorderSide(
+        color: selected
+            ? theme.colorScheme.primary
+            : theme.colorScheme.outlineVariant,
+        width: 0.8,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+// ── 投稿者プロフィールシート ──────────────────────────────────────────────────
+
+/// フィード投稿者のアバター・ユーザー名タップ時に表示する簡易プロフィールシート。
+/// フォロー/アンフォローボタンとフォロワー数を表示する。
+class _AuthorProfileSheet extends ConsumerWidget {
+  const _AuthorProfileSheet({
+    required this.userId,
+    required this.userName,
+    required this.avatarUrl,
+  });
+
+  final String userId;
+  final String userName;
+  final String avatarUrl;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSignedIn = ref.watch(isSignedInProvider);
+    final session = ref.watch(sessionProvider);
+    // 自分自身のプロフィールを表示しているかどうか
+    final isMe = session != null && session.user.id == userId;
+    // フォロー済みかどうか（followingIdsProviderから派生）
+    final isFollowing = ref.watch(isFollowingProvider(userId));
+    // フォロワー数・フォロー中数を取得
+    final countsAsync = ref.watch(followCountsProvider(userId));
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ドラッグハンドル（ボトムシートを引っ張って閉じる操作のヒント）
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // アバター
+            if (avatarUrl.isNotEmpty)
+              CircleAvatar(
+                radius: 40,
+                backgroundImage: NetworkImage(avatarUrl),
+              )
+            else
+              CircleAvatar(
+                radius: 40,
+                child: Text(
+                  userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                  style: const TextStyle(fontSize: 28),
+                ),
+              ),
+            const SizedBox(height: 14),
+            // ユーザー名
+            Text(
+              userName,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            // フォロワー数・フォロー中数（取得できたときだけ表示）
+            countsAsync.whenOrNull(
+              data: (counts) => Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _FollowCountBadge(
+                    label: 'フォロワー',
+                    count: counts.followersCount,
+                  ),
+                  const SizedBox(width: 24),
+                  _FollowCountBadge(
+                    label: 'フォロー中',
+                    count: counts.followingCount,
+                  ),
+                ],
+              ),
+            ) ?? const SizedBox.shrink(),
+            const SizedBox(height: 20),
+            // フォロー/アンフォローボタン
+            // 自分自身には表示しない。未ログインは「ログインでフォロー」を促す。
+            if (!isMe) ...[
+              SizedBox(
+                width: double.infinity,
+                child: isSignedIn
+                    ? FilledButton.icon(
+                        icon: Icon(
+                          isFollowing
+                              ? Icons.person_remove_outlined
+                              : Icons.person_add_outlined,
+                          size: 18,
+                        ),
+                        label: Text(isFollowing ? 'フォロー解除' : 'フォローする'),
+                        style: isFollowing
+                            ? FilledButton.styleFrom(
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.onSurface,
+                              )
+                            : null,
+                        onPressed: () async {
+                          try {
+                            if (isFollowing) {
+                              await ref
+                                  .read(followingIdsProvider.notifier)
+                                  .unfollow(userId);
+                            } else {
+                              await ref
+                                  .read(followingIdsProvider.notifier)
+                                  .follow(userId);
+                            }
+                            // フォロワー数表示を更新するためにプロバイダーを再取得
+                            ref.invalidate(followCountsProvider(userId));
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('操作に失敗しました。もう一度お試しください。')),
+                              );
+                            }
+                          }
+                        },
+                      )
+                    : OutlinedButton.icon(
+                        icon: const Icon(Icons.login, size: 18),
+                        label: const Text('ログインしてフォロー'),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            // 閉じるボタン
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('閉じる'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// フォロワー数・フォロー中数の表示バッジ
+class _FollowCountBadge extends StatelessWidget {
+  const _FollowCountBadge({required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$count',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        Text(
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: const Color(0xFF757575)),
+        ),
+      ],
     );
   }
 }
