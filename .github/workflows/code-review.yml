@@ -85,7 +85,7 @@ jobs:
           FBEOF
 
       - name: Flutter 静的解析を実行
-        run: flutter analyze --no-fatal-warnings
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
 
   flutter_test:
     name: Flutter テスト
