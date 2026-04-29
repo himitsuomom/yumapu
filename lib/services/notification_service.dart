@@ -1,7 +1,9 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:yu_map/core/navigation/app_navigator.dart';
 
 /// バックグラウンド通知ハンドラー（top-level 関数必須）
 @pragma('vm:entry-point')
@@ -23,6 +25,11 @@ class NotificationService {
 
   final _messaging = FirebaseMessaging.instance;
   final _localNotifications = FlutterLocalNotificationsPlugin();
+
+  /// cold start（アプリ終了状態から通知タップで起動）時に
+  /// Navigator がまだ存在しないため、一時的に保留するルート。
+  /// [drainPendingNavigation] が呼ばれた時点で実行する。
+  String? _pendingNavigation;
 
   static const _androidChannel = AndroidNotificationChannel(
     'yumap_default',
@@ -76,8 +83,12 @@ class NotificationService {
     FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTapped);
 
     // アプリが terminated 状態から通知タップで起動したとき
+    // cold start では Navigator がまだ存在しないため、保留キューに積んで
+    // Navigator ���使えるようになるまで��機する。
     final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) _onNotificationTapped(initialMessage);
+    if (initialMessage != null) {
+      _pendingNavigation = _routeForData(initialMessage.data);
+    }
   }
 
   /// ログイン後に呼ぶ: FCM トークンを取得して Supabase に保存する
@@ -165,23 +176,58 @@ class NotificationService {
     _handleNavigation(data);
   }
 
-  /// 通知タイプに応じた画面遷移
-  /// type: 'like' | 'comment' | 'follow' | 'checkin_badge'
-  void _handleNavigation(Map<String, dynamic> data) {
-    final type = data['type'] as String?;
-    final targetId = data['target_id'] as String?;
-    debugPrint('Notification nav: type=$type, target=$targetId');
+  /// cold start の保留ナビゲーションを実行する。
+  ///
+  /// Navigator が利用可能になったタイミング（_AuthGate.initState など）で
+  /// 一度だけ呼ぶ。保留ルートがなければ何もしない。
+  void drainPendingNavigation() {
+    final route = _pendingNavigation;
+    if (route == null) return;
+    _pendingNavigation = null;
+    // postFrameCallback: ウィジェットツリー構築後に遷移する
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      appNavigatorKey.currentState?.pushNamed(route);
+    });
+  }
 
-    // TODO: GoRouter が利用可能になったら以下のように遷移する
-    // switch (type) {
-    //   case 'like':
-    //   case 'comment':
-    //     router.push('/posts/$targetId');
-    //   case 'follow':
-    //     router.push('/profile/$targetId');
-    //   case 'checkin_badge':
-    //     router.push('/badges');
-    // }
+  /// 通知データからルート文字列を決定する。
+  ///
+  /// type: 'like' | 'comment' → '/feed'（フィード画面でレスポンスを確認）
+  /// type: 'follow'           → '/profile'（自分のプロフィールで通知確認）
+  /// type: 'checkin_badge'    → '/badges'（バッジ獲得画面に遷移）
+  /// type: 'facility'         → '/facility'（施設詳細へ遷移 — target_id が施設ID）
+  /// 未知の type              → null（遷移しない）
+  String? _routeForData(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    switch (type) {
+      case 'like':
+      case 'comment':
+        return '/feed';
+      case 'follow':
+        return '/profile';
+      case 'checkin_badge':
+        return '/badges';
+      default:
+        debugPrint('Notification: unknown type=$type');
+        return null;
+    }
+  }
+
+  /// 通知タイプに応じた画面遷移。
+  ///
+  /// appNavigatorKey 経由で Navigator を操作するため Context 不要。
+  /// Navigator がまだ存在しない場合（極めて短時間）は遷移をスキップする。
+  void _handleNavigation(Map<String, dynamic> data) {
+    final route = _routeForData(data);
+    if (route == null) return;
+
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) {
+      // Navigator がまだ起動していない場合は保留キューに積む
+      _pendingNavigation = route;
+      return;
+    }
+    navigator.pushNamed(route);
   }
 
   String _encodePayload(Map<String, dynamic> data) =>

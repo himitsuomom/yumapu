@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/widgets/banner_ad_widget.dart';
 import 'package:yu_map/core/widgets/error_widget.dart';
+import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/core/widgets/loading_widget.dart';
 import 'package:yu_map/core/widgets/photo_gallery_viewer.dart';
 import 'package:yu_map/domain/entities/facility.dart';
@@ -211,6 +212,64 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   // ── Check-in dialog ───────────────────────────────────────────────────────
   // ロジックは lib/services/checkin_service.dart の CheckinService に共通化。
 
+  // ── Sticky checkin bar ────────────────────────────────────────────────────
+  //
+  // UX-V27-1/2: Scaffold.bottomNavigationBar として固定表示する。
+  // スクロール位置に関係なくチェックインボタンが常に見えるため、
+  // ページ下部のレビューを読んでいてもワンタップでチェックインできる。
+  //
+  // - ログイン中:      FilledButton「チェックイン」（処理中はスピナー表示）
+  // - ゲストモード中: OutlinedButton「ログインしてチェックイン」
+  //                   タップすると GuestRestrictionDialog でログインを促す
+  Widget _buildStickyCheckinBar(Facility facility, bool isSignedIn) {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+        child: SizedBox(
+          height: 48,
+          width: double.infinity,
+          child: isSignedIn
+              ? FilledButton.icon(
+                  icon: _isCheckingIn
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle_outline),
+                  label: const Text('チェックイン'),
+                  onPressed:
+                      _isCheckingIn ? null : () => _showCheckinDialog(facility),
+                )
+              : OutlinedButton.icon(
+                  icon: const Icon(Icons.login),
+                  label: const Text('ログインしてチェックイン'),
+                  onPressed: () async {
+                    final goLogin = await GuestRestrictionDialog.show(
+                      context,
+                      featureName: 'チェックイン',
+                    );
+                    if (goLogin == true && mounted) {
+                      Navigator.of(context).pushNamed('/login');
+                    }
+                  },
+                ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showCheckinDialog(Facility facility) async {
     if (_isCheckingIn) return;
     await CheckinService.performCheckin(
@@ -334,6 +393,8 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
 
   Widget _buildScaffold(Facility facility) {
     final isSignedIn = ref.watch(isSignedInProvider);
+    // UX-V27-2: ゲストモード時も「ログインしてチェックイン」ボタンを表示するために取得する。
+    final isGuestMode = ref.watch(guestModeProvider);
     final isFavorite = ref.watch(isFavoriteProvider(facility.id));
     // UX-V8-9: ログイン中のみいいね済みIDを取得してトグル表示に使う
     final likedIds = isSignedIn
@@ -343,6 +404,13 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
     final currentUserId = ref.watch(sessionProvider)?.user.id;
 
     return Scaffold(
+      // UX-V27-1: チェックインボタンをScaffold底部に固定する。
+      // スクロールしてレビューを読んでいても常にチェックインできる。
+      // UX-V27-2: ゲストモードでは「ログインしてチェックイン」を表示し、
+      //           タップするとログイン誘導ダイアログが出る。
+      bottomNavigationBar: (isSignedIn || isGuestMode)
+          ? _buildStickyCheckinBar(facility, isSignedIn)
+          : null,
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
@@ -569,50 +637,27 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           ),
 
           // ── Action buttons (login only) ────────────────────────────────
+          // UX-V27-1: チェックインボタンはScaffold底部に固定済み（常に見える）。
+          // ここにはログイン後の補助アクション（レビュー・プラン追加）のみ残す。
           if (isSignedIn)
             SliverToBoxAdapter(
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Column(
+                child: Row(
                   children: [
-                    // 1行目: チェックイン・レビュー
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: _isCheckingIn
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.check_circle_outline),
-                            label: const Text('チェックイン'),
-                            // 処理中は null を渡してボタンを無効化する
-                            onPressed: _isCheckingIn
-                                ? null
-                                : () => _showCheckinDialog(facility),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.rate_review_outlined),
-                            label: const Text('レビューを書く'),
-                            onPressed: () => _showReviewSheet(facility),
-                          ),
-                        ),
-                      ],
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.rate_review_outlined),
+                        label: const Text('レビューを書く'),
+                        onPressed: () => _showReviewSheet(facility),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    // 2行目: プランに追加
-                    SizedBox(
-                      width: double.infinity,
+                    const SizedBox(width: 12),
+                    Expanded(
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.playlist_add_outlined),
-                        label: const Text('湯めぐりプランに追加'),
+                        label: const Text('プランに追加'),
                         onPressed: () => _showAddToPlanSheet(facility),
                       ),
                     ),

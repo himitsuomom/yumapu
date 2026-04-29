@@ -163,6 +163,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         );
   }
 
+  /// プルリフレッシュ時の処理。
+  ///
+  /// 現在のフィルター条件を維持しつつ page=0 に戻してリロードする。
+  /// 蓄積リストをリセットして最初から表示し直す。
+  /// RefreshIndicator が期待する Future<void> を返す。
+  Future<void> _onRefresh() async {
+    // 蓄積リストをリセット（次の build で page==0 の初回取得扱いになる）
+    setState(() {
+      _accumulatedFacilities = [];
+      _hasMore = false;
+      _isLoadingMore = false;
+      _prevFilterKey = '';
+    });
+    // page=0 に戻して facilityListProvider を再トリガー
+    ref.read(facilitySearchParamsProvider.notifier).update(
+          (p) => p.copyWith(page: 0),
+        );
+    // プロバイダーの完了を待ってから RefreshIndicator のアニメーションを終了する
+    try {
+      await ref.read(facilityListProvider.future);
+    } catch (_) {
+      // エラー時はアニメーションを止めるだけ（AppErrorWidget が表示される）
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -377,7 +402,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // フィルターなし（検索語・種別・その他）の場合はリスト先頭に「今週の人気」を表示
     final showTrending = !hasActiveFilters && params.page == 0;
 
-    return ListView.builder(
+    // UX-V25-1: 引っ張って更新（プルリフレッシュ）対応。
+    // ListView の件数が少ないときでも引っ張れるよう AlwaysScrollableScrollPhysics を指定。
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       // showTrending の場合はインデックス0に人気施設ウィジェットを挿入
       itemCount: _accumulatedFacilities.length + (showTrending ? 2 : 1),
       itemBuilder: (context, i) {
@@ -419,6 +449,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ],
         );
       },
+      ),
     );
   }
 
@@ -888,7 +919,9 @@ class _PrefecturePickerSheet extends ConsumerWidget {
 // ── ピッカー内部用の sealed リスト項目 ────────────────────────────────────────
 
 /// ピッカーリストのアイテム基底クラス（ヘッダー or 都道府県行）
-sealed class _ListItem {}
+sealed class _ListItem {
+  const _ListItem();
+}
 
 class _RegionHeader extends _ListItem {
   final String label;

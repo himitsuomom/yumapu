@@ -7,6 +7,7 @@ import 'package:yu_map/domain/entities/user.dart' as app;
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/models/onsen_plan.dart';
+import 'package:yu_map/providers/follow_provider.dart';
 import 'package:yu_map/providers/plan_provider.dart';
 import 'package:yu_map/providers/badge_provider.dart';
 import 'package:yu_map/providers/ranking_provider.dart';
@@ -130,6 +131,12 @@ class ProfileScreen extends ConsumerWidget {
               if (user?.isPremium == true) ...[
                 const SizedBox(height: 8),
                 const PremiumChip(),
+              ],
+              // UX-V26-1: フォロワー数・フォロー中数を自分のプロフィールにも表示。
+              // SNSとして「自分のフォロワーが何人いるか」は重要な社会的指標。
+              if (user != null) ...[
+                const SizedBox(height: 12),
+                _OwnFollowCountsRow(userId: user.id),
               ],
             ],
           ),
@@ -633,6 +640,73 @@ class _GamificationCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── フォロワー数・フォロー中数（自分のプロフィール用） ──────────────────────────────
+
+/// UX-V26-1: 自分のプロフィール画面にフォロワー数・フォロー中数を表示する。
+///
+/// SNSとして「自分のフォロワーが何人いるか」は重要な社会的指標であり、
+/// 他ユーザーのプロフィール底シートには表示されているのに
+/// 自分のプロフィール画面にないのはUXの不整合だった。
+class _OwnFollowCountsRow extends ConsumerWidget {
+  const _OwnFollowCountsRow({required this.userId});
+
+  final String userId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final countsAsync = ref.watch(followCountsProvider(userId));
+
+    return countsAsync.when(
+      data: (counts) => Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _FollowCountBadge(
+            label: 'フォロワー',
+            count: counts.followersCount,
+          ),
+          const SizedBox(width: 32),
+          _FollowCountBadge(
+            label: 'フォロー中',
+            count: counts.followingCount,
+          ),
+        ],
+      ),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// フォロワー数・フォロー中数を縦並びで表示するバッジ。
+class _FollowCountBadge extends StatelessWidget {
+  const _FollowCountBadge({required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$count',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        Text(
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: const Color(0xFF757575)),
+        ),
+      ],
     );
   }
 }

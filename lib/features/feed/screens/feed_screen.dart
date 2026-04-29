@@ -751,6 +751,9 @@ class _EmptyFeedView extends ConsumerWidget {
 
 /// フォロー中タブで投稿が0件の場合に表示するウィジェット。
 /// 「まだ誰もフォローしていない」または「フォロー中の人が未投稿」の2ケースをカバー。
+///
+/// UX-V25-2: ランキング画面へのCTAボタンを追加。
+/// フォロー相手が0人の初期状態で「どこに行けばいいか分からない」を解消する。
 class _EmptyFollowingFeedView extends StatelessWidget {
   const _EmptyFollowingFeedView();
 
@@ -777,6 +780,14 @@ class _EmptyFollowingFeedView extends StatelessWidget {
                   .bodyMedium
                   ?.copyWith(color: const Color(0xFF757575)),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            // UX-V25-2: ランキングへの導線ボタン
+            // フォロー相手がいない初期状態のユーザーが次の行動を取りやすくする
+            FilledButton.icon(
+              icon: const Icon(Icons.leaderboard_outlined, size: 18),
+              label: const Text('ランキングでユーザーを探す'),
+              onPressed: () => Navigator.of(context).pushNamed('/ranking'),
             ),
           ],
         ),

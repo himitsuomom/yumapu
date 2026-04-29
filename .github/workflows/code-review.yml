@@ -1,0 +1,168 @@
+name: コードレビュー (Flutter)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  flutter_analyze:
+    name: Flutter 静的解析
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Flutter をセットアップ
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+
+      - name: 依存関係をインストール
+        run: flutter pub get
+
+      - name: CI 用ダミーファイルを作成
+        run: |
+          # .env（pubspec.yaml の assets に含まれるため必要）
+          cat <<'ENVEOF' > .env
+          SUPABASE_URL=https://placeholder.supabase.co
+          SUPABASE_ANON_KEY=placeholder_anon_key
+          GOOGLE_MAPS_KEY_ANDROID=placeholder
+          GOOGLE_MAPS_KEY_IOS=placeholder
+          REVENUECAT_KEY_ANDROID=placeholder
+          REVENUECAT_KEY_IOS=placeholder
+          ADMOB_BANNER_ANDROID=ca-app-pub-3940256099942544/6300978111
+          ADMOB_BANNER_IOS=ca-app-pub-3940256099942544/2934735716
+          ADMOB_REWARDED_ANDROID=ca-app-pub-3940256099942544/5224354917
+          ADMOB_REWARDED_IOS=ca-app-pub-3940256099942544/1712485313
+          SUPABASE_SERVICE_ROLE_KEY=placeholder
+          SENTRY_DSN=placeholder
+          ENVEOF
+
+          # firebase_options.dart（gitignore 対象のため CI で生成）
+          cat <<'FBEOF' > lib/firebase_options.dart
+          // CI stub — Firebase features disabled in CI environment
+          // ignore_for_file: type=lint
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          import 'package:flutter/foundation.dart'
+              show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              if (kIsWeb) {
+                return const FirebaseOptions(
+                  apiKey: 'ci-placeholder',
+                  appId: '1:0:web:0',
+                  messagingSenderId: '0',
+                  projectId: 'ci-placeholder',
+                );
+              }
+              switch (defaultTargetPlatform) {
+                case TargetPlatform.android:
+                  return const FirebaseOptions(
+                    apiKey: 'ci-placeholder',
+                    appId: '1:0:android:0',
+                    messagingSenderId: '0',
+                    projectId: 'ci-placeholder',
+                  );
+                case TargetPlatform.iOS:
+                  return const FirebaseOptions(
+                    apiKey: 'ci-placeholder',
+                    appId: '1:0:ios:0',
+                    messagingSenderId: '0',
+                    projectId: 'ci-placeholder',
+                    iosBundleId: 'com.example.placeholder',
+                  );
+                default:
+                  throw UnsupportedError('CI stub: unsupported platform');
+              }
+            }
+          }
+          FBEOF
+
+      - name: Flutter 静的解析を実行
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+
+  flutter_test:
+    name: Flutter テスト
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Flutter をセットアップ
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+          cache: true
+
+      - name: 依存関係をインストール
+        run: flutter pub get
+
+      - name: CI 用ダミーファイルを作成
+        run: |
+          cat <<'ENVEOF' > .env
+          SUPABASE_URL=https://placeholder.supabase.co
+          SUPABASE_ANON_KEY=placeholder_anon_key
+          GOOGLE_MAPS_KEY_ANDROID=placeholder
+          GOOGLE_MAPS_KEY_IOS=placeholder
+          REVENUECAT_KEY_ANDROID=placeholder
+          REVENUECAT_KEY_IOS=placeholder
+          ADMOB_BANNER_ANDROID=ca-app-pub-3940256099942544/6300978111
+          ADMOB_BANNER_IOS=ca-app-pub-3940256099942544/2934735716
+          ADMOB_REWARDED_ANDROID=ca-app-pub-3940256099942544/5224354917
+          ADMOB_REWARDED_IOS=ca-app-pub-3940256099942544/1712485313
+          SUPABASE_SERVICE_ROLE_KEY=placeholder
+          SENTRY_DSN=placeholder
+          ENVEOF
+
+          cat <<'FBEOF' > lib/firebase_options.dart
+          // CI stub — Firebase features disabled in CI environment
+          // ignore_for_file: type=lint
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          import 'package:flutter/foundation.dart'
+              show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              if (kIsWeb) {
+                return const FirebaseOptions(
+                  apiKey: 'ci-placeholder',
+                  appId: '1:0:web:0',
+                  messagingSenderId: '0',
+                  projectId: 'ci-placeholder',
+                );
+              }
+              switch (defaultTargetPlatform) {
+                case TargetPlatform.android:
+                  return const FirebaseOptions(
+                    apiKey: 'ci-placeholder',
+                    appId: '1:0:android:0',
+                    messagingSenderId: '0',
+                    projectId: 'ci-placeholder',
+                  );
+                case TargetPlatform.iOS:
+                  return const FirebaseOptions(
+                    apiKey: 'ci-placeholder',
+                    appId: '1:0:ios:0',
+                    messagingSenderId: '0',
+                    projectId: 'ci-placeholder',
+                    iosBundleId: 'com.example.placeholder',
+                  );
+                default:
+                  throw UnsupportedError('CI stub: unsupported platform');
+              }
+            }
+          }
+          FBEOF
+
+      - name: テストを実行
+        run: flutter test
