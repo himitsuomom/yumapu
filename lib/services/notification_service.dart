@@ -31,6 +31,10 @@ class NotificationService {
   /// [drainPendingNavigation] が呼ばれた時点で実行する。
   String? _pendingNavigation;
 
+  /// 保留ナビゲーションに渡す引数（施設IDなど）。
+  /// '/facility' の場合は String 型の施設IDを保持する。
+  Object? _pendingNavigationArgs;
+
   static const _androidChannel = AndroidNotificationChannel(
     'yumap_default',
     '湯マップ通知',
@@ -84,10 +88,10 @@ class NotificationService {
 
     // アプリが terminated 状態から通知タップで起動したとき
     // cold start では Navigator がまだ存在しないため、保留キューに積んで
-    // Navigator ���使えるようになるまで��機する。
+    // Navigator が使えるようになるまで待機する。
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
-      _pendingNavigation = _routeForData(initialMessage.data);
+      _storePendingNavigation(initialMessage.data);
     }
   }
 
@@ -183,19 +187,21 @@ class NotificationService {
   void drainPendingNavigation() {
     final route = _pendingNavigation;
     if (route == null) return;
+    final args = _pendingNavigationArgs;
     _pendingNavigation = null;
+    _pendingNavigationArgs = null;
     // postFrameCallback: ウィジェットツリー構築後に遷移する
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      appNavigatorKey.currentState?.pushNamed(route);
+      appNavigatorKey.currentState?.pushNamed(route, arguments: args);
     });
   }
 
-  /// 通知データからルート文字列を決定する。
+  /// 通知データからルート文字列を決定する（引数不要なルート用）。
   ///
   /// type: 'like' | 'comment' → '/feed'（フィード画面でレスポンスを確認）
   /// type: 'follow'           → '/profile'（自分のプロフィールで通知確認）
   /// type: 'checkin_badge'    → '/badges'（バッジ獲得画面に遷移）
-  /// type: 'facility'         → '/facility'（施設詳細へ遷移 — target_id が施設ID）
+  /// type: 'facility'         → null（引数が必要なため _handleNavigation で個別処理）
   /// 未知の type              → null（遷移しない）
   String? _routeForData(Map<String, dynamic> data) {
     final type = data['type'] as String?;
@@ -208,16 +214,50 @@ class NotificationService {
       case 'checkin_badge':
         return '/badges';
       default:
-        debugPrint('Notification: unknown type=$type');
+        if (type != 'facility') {
+          debugPrint('Notification: unknown type=$type');
+        }
         return null;
+    }
+  }
+
+  /// 通知データを保留キューに積む（cold start 用）。
+  void _storePendingNavigation(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    if (type == 'facility') {
+      final facilityId = data['target_id'] as String?;
+      if (facilityId != null && facilityId.isNotEmpty) {
+        _pendingNavigation = '/facility';
+        _pendingNavigationArgs = facilityId;
+      }
+    } else {
+      _pendingNavigation = _routeForData(data);
+      _pendingNavigationArgs = null;
     }
   }
 
   /// 通知タイプに応じた画面遷移。
   ///
   /// appNavigatorKey 経由で Navigator を操作するため Context 不要。
-  /// Navigator がまだ存在しない場合（極めて短時間）は遷移をスキップする。
+  /// Navigator がまだ存在しない場合（極めて短時間）は保留キューに積む。
   void _handleNavigation(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+
+    // 施設詳細は引数（施設ID）付きの onGenerateRoute ルートのため個別処理
+    if (type == 'facility') {
+      final facilityId = data['target_id'] as String?;
+      if (facilityId == null || facilityId.isEmpty) return;
+
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null) {
+        _pendingNavigation = '/facility';
+        _pendingNavigationArgs = facilityId;
+        return;
+      }
+      navigator.pushNamed('/facility', arguments: facilityId);
+      return;
+    }
+
     final route = _routeForData(data);
     if (route == null) return;
 
@@ -225,6 +265,7 @@ class NotificationService {
     if (navigator == null) {
       // Navigator がまだ起動していない場合は保留キューに積む
       _pendingNavigation = route;
+      _pendingNavigationArgs = null;
       return;
     }
     navigator.pushNamed(route);

@@ -256,36 +256,40 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  // ゲストボタン（全ページで表示）
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton(
-                      onPressed: _onGuestMode,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey[700],
-                        side: BorderSide(color: Colors.grey[400]!),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                  // UX-57: ゲストボタンは2ページ目以降のみ表示する。
+                  // 1ページ目はアプリの価値（バッジ・プラン等）を見せてから
+                  // ゲスト選択肢を提示することで早期離脱を抑制する。
+                  if (_currentPage >= 1) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: _onGuestMode,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.grey[700],
+                          side: BorderSide(color: Colors.grey[400]!),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'ゲストとして見る',
+                          style: TextStyle(fontSize: 14),
                         ),
                       ),
-                      child: const Text(
-                        'ゲストとして見る',
-                        style: TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'ゲストはお気に入り・クチコミ・チェックインを\nご利用いただけません',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                        height: 1.4,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'ゲストはお気に入り・クチコミ・チェックインを\nご利用いただけません',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[500],
-                      height: 1.4,
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),

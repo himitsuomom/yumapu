@@ -292,8 +292,36 @@ class _RankingScreenState extends ConsumerState<RankingScreen> {
               loading: () => const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator()),
               ),
-              error: (e, _) => SliverFillRemaining(
-                child: Center(child: Text('取得エラー: $e')),
+              error: (_, __) => SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.signal_wifi_off_outlined,
+                            size: 48, color: Colors.grey),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'ランキングの取得に失敗しました',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'ネットワーク接続を確認してください',
+                          style: TextStyle(color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('再読み込み'),
+                          onPressed: () => ref.invalidate(rankingListProvider),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ],

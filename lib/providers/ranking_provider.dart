@@ -128,8 +128,10 @@ final rankingListProvider =
     return (data as List)
         .map((e) => RankedUser.fromJson(e as Map<String, dynamic>))
         .toList();
-  } catch (_) {
-    return [];
+  } catch (e, st) {
+    // エラーをリスロー → ランキング画面の error ケースでリトライUI が表示される
+    // 空リストを返すと「誰もいない」と誤認されるため、エラーとして伝播させる
+    Error.throwWithStackTrace(e, st);
   }
 });
 
@@ -148,7 +150,8 @@ final myRankingProvider =
         .maybeSingle();
     if (data == null) return null;
     return RankedUser.fromJson(data as Map<String, dynamic>);
-  } catch (_) {
-    return null;
+  } catch (e, st) {
+    // エラーをリスロー → ランキング画面の自分の順位カードで error UI が表示される
+    Error.throwWithStackTrace(e, st);
   }
 });
