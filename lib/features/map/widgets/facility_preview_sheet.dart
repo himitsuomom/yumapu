@@ -18,6 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show FileOptions;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/utils/opening_hours_parser.dart';
 import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
@@ -624,44 +625,43 @@ class _FacilityPreviewSheetState
                   child: Divider(height: 1)),
 
               // ── チェックインボタン（主要アクション）─────────────────
-              // UX-V7-3修正: チェックインをFilledButtonにして主要アクションとして明確化。
-              // バッジ獲得・ランキング反映という湯マップのコア機能を最も目立たせる。
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: FilledButton.icon(
-                    onPressed: _isCheckingIn ? null : _showCheckinDialog,
-                    icon: _isCheckingIn
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.check_circle_outline, size: 18),
-                    label: Text(
-                      _isCheckingIn ? 'チェックイン中...' : 'チェックイン',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: typeColor,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+              if (AppConfig.isCheckinEnabled)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: FilledButton.icon(
+                      onPressed: _isCheckingIn ? null : _showCheckinDialog,
+                      icon: _isCheckingIn
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.check_circle_outline, size: 18),
+                      label: Text(
+                        _isCheckingIn ? 'チェックイン中...' : 'チェックイン',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: typeColor,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
               // ── 「クチコミを書く」「詳細を見る」ボタン（副次アクション・横並び）
-              // UX-V7-3修正: 副次アクションは横並びのOutlinedButtonにして優先度を下げる。
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  padding: EdgeInsets.fromLTRB(16, AppConfig.isCheckinEnabled ? 4 : 12, 16, 24),
                   child: Row(
                     children: [
                       // クチコミを書く
+                      if (AppConfig.isReviewEnabled) ...[
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () async {
@@ -714,6 +714,7 @@ class _FacilityPreviewSheetState
                         ),
                       ),
                       const SizedBox(width: 8),
+                      ],
                       // 詳細を見る
                       Expanded(
                         child: OutlinedButton.icon(
