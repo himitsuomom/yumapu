@@ -2,6 +2,7 @@
 //
 // ランキング機能のデータ管理
 // user_rankings テーブルから取得し、users テーブルと JOIN して表示名・アバターを付加する
+// 期間フィルター: 累計=user_rankingsテーブル直接、今週/今月=get_period_rankings RPC
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/domain/entities/user_ranking.dart';
@@ -90,6 +91,53 @@ extension RankingSortByExtension on RankingSortBy {
 /// 切り替えると即座にリストが再取得される。
 final rankingSortByProvider = StateProvider<RankingSortBy>(
   (ref) => RankingSortBy.totalPoints,
+);
+
+// ── ランキングの表示期間 ──────────────────────────────────────────────────────
+
+/// ランキング画面で現在選択されている表示期間の列挙型。
+///
+/// - [allTime] : 累計（全期間）。user_rankings テーブルの集計値を使う
+/// - [monthly] : 今月（過去30日）。get_period_rankings RPC で集計
+/// - [weekly]  : 今週（過去7日）。get_period_rankings RPC で集計
+enum RankingPeriod {
+  allTime,
+  monthly,
+  weekly,
+}
+
+extension RankingPeriodExtension on RankingPeriod {
+  /// UIに表示するラベル
+  String get label {
+    switch (this) {
+      case RankingPeriod.allTime:
+        return '累計';
+      case RankingPeriod.monthly:
+        return '今月';
+      case RankingPeriod.weekly:
+        return '今週';
+    }
+  }
+
+  /// RPC の p_days_ago パラメータ（累計は NULL = 全件）
+  int? get daysAgo {
+    switch (this) {
+      case RankingPeriod.allTime:
+        return null;
+      case RankingPeriod.monthly:
+        return 30;
+      case RankingPeriod.weekly:
+        return 7;
+    }
+  }
+
+  /// 累計かどうか（累計は user_rankings テーブルを使う）
+  bool get isAllTime => this == RankingPeriod.allTime;
+}
+
+/// ランキング画面で現在選択されている表示期間を保持するStateProvider
+final rankingPeriodProvider = StateProvider<RankingPeriod>(
+  (ref) => RankingPeriod.allTime,
 );
 
 // ── ランキング表示用モデル ─────────────────────────────────────────────────────
