@@ -21,6 +21,13 @@ const _sortOptions = [
   RankingSortBy.visitCount,
 ];
 
+// ランキング期間フィルターの表示順
+const _periodOptions = [
+  RankingPeriod.allTime,
+  RankingPeriod.monthly,
+  RankingPeriod.weekly,
+];
+
 // ── ポイントルール定義 ─────────────────────────────────────────────────────────
 
 /// ポイント獲得ルールをまとめた定数。DB の ranking_triggers.sql と一致させること。
@@ -178,6 +185,7 @@ class _RankingScreenState extends ConsumerState<RankingScreen> {
   Widget build(BuildContext context) {
     final isSignedIn = ref.watch(isSignedInProvider);
     final sortBy = ref.watch(rankingSortByProvider);
+    final period = ref.watch(rankingPeriodProvider);
     final rankingAsync = ref.watch(rankingListProvider);
     final myRankingAsync = ref.watch(myRankingProvider);
 
@@ -204,6 +212,7 @@ class _RankingScreenState extends ConsumerState<RankingScreen> {
             icon: const Icon(Icons.refresh),
             tooltip: '更新',
             onPressed: () {
+              // ランキングリストと自分の順位を再取得する
               ref.invalidate(rankingListProvider);
               ref.invalidate(myRankingProvider);
             },
@@ -211,13 +220,53 @@ class _RankingScreenState extends ConsumerState<RankingScreen> {
         ],
       ),
       body: RefreshIndicator(
-        // 引っ張って更新（プルリフレッシュ）
+        // 引っ張って更新（プルリフレッシュ）— ランキングリストと自分の順位を再取得
         onRefresh: () async {
           ref.invalidate(rankingListProvider);
           ref.invalidate(myRankingProvider);
         },
         child: CustomScrollView(
           slivers: [
+            // ── 期間フィルター（累計 / 今月 / 今週）─────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: Row(
+                  children: [
+                    // 「期間」ラベル
+                    Text(
+                      '期間:',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF757575),
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(width: 8),
+                    // 期間ChoiceChip群
+                    ..._periodOptions.map((p) {
+                      final isSelected = period == p;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(
+                            p.label,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          selected: isSelected,
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (selected) {
+                            if (selected) {
+                              ref.read(rankingPeriodProvider.notifier).state = p;
+                            }
+                          },
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+
             // ── ソート切り替えチップ ──────────────────────────────────────
             SliverToBoxAdapter(
               child: SingleChildScrollView(
@@ -276,7 +325,7 @@ class _RankingScreenState extends ConsumerState<RankingScreen> {
                       // セクションヘッダー（ソート種別を表示）
                       if (index == 0) {
                         return _SectionHeader(
-                          title: 'TOP 50 — ${sortBy.label}順',
+                          title: 'TOP 50 — ${period.label} / ${sortBy.label}順',
                         );
                       }
                       final rank = index; // 1-indexed rank

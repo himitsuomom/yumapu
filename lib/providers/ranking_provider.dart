@@ -173,27 +173,73 @@ class RankedUser {
 
 // ── ランキングリストProvider ───────────────────────────────────────────────────
 
-/// トップ50ランキングリスト（rankingSortByProvider が示す列で降順ソート）
+/// トップ50ランキングリスト
 ///
-/// rankingSortByProvider の値が変わると自動で再取得される。
+/// - rankingSortByProvider  : ソート種別（合計PT / 探索PT / 社交PT / 訪問数）
+/// - rankingPeriodProvider  : 表示期間（累計 / 今月 / 今週）
+///
+/// どちらかが変わると自動で再取得される。
+/// 累計は user_rankings テーブル、今月/今週は get_period_rankings RPC を使用。
 final rankingListProvider =
     FutureProvider.autoDispose<List<RankedUser>>((ref) async {
-  // ソート種別を watch → 値が変わると自動リビルド
   final sortBy = ref.watch(rankingSortByProvider);
+  final period = ref.watch(rankingPeriodProvider);
   final client = ref.read(supabaseClientProvider);
   if (client == null) return [];
+
   try {
-    final data = await client
-        .from('user_rankings')
-        .select('*, users(display_name, username, avatar_url)')
-        .order(sortBy.column, ascending: false)
-        .limit(50);
-    return (data as List)
-        .map((e) => RankedUser.fromJson(e as Map<String, dynamic>))
-        .toList();
+    if (period.isAllTime) {
+      // ────────────────────────────────────────────────
+      // 累計: user_rankings テーブルをそのまま使う（高速）
+      // ────────────────────────────────────────────────
+      final data = await client
+          .from('user_rankings')
+          .select('*, users(display_name, username, avatar_url)')
+          .order(sortBy.column, ascending: false)
+          .limit(50);
+      return (data as List)
+          .map((e) => RankedUser.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } else {
+      // ────────────────────────────────────────────────
+      // 期間別: get_period_rankings RPC で visits/reviews を集計
+      // ────────────────────────────────────────────────
+      final data = await client.rpc(
+        'get_period_rankings',
+        params: {
+          'p_days_ago': period.daysAgo,
+          'p_sort_col': sortBy.column,
+          'p_limit': 50,
+        },
+      );
+      // BIGINT は Supabase REST では int として届く。
+      // 念のため文字列にも対応した安全パース関数を用意する。
+      int safeInt(dynamic v) =>
+          v == null ? 0 : (v is int ? v : int.tryParse(v.toString()) ?? 0);
+
+      final list = data as List;
+      return List<RankedUser>.generate(list.length, (index) {
+        final e = list[index] as Map<String, dynamic>;
+        return RankedUser(
+          ranking: UserRanking(
+            // 期間別ランキングには専用 row-ID がないため user_id を代用する
+            id: e['user_id'] as String,
+            userId: e['user_id'] as String,
+            explorerPoints: safeInt(e['explorer_points']),
+            visitCount: safeInt(e['visit_count']),
+            socialPoints: safeInt(e['social_points']),
+            reviewCount: safeInt(e['review_count']),
+            totalPoints: safeInt(e['total_points']),
+            currentTitle: e['current_title'] as String? ?? '湯めぐり初心者',
+            rankPosition: index + 1, // ソート済みインデックスを順位として使用
+          ),
+          displayName: e['display_name'] as String? ?? '湯めぐりユーザー',
+          avatarUrl: e['avatar_url'] as String?,
+        );
+      });
+    }
   } catch (e, st) {
     // エラーをリスロー → ランキング画面の error ケースでリトライUI が表示される
-    // 空リストを返すと「誰もいない」と誤認されるため、エラーとして伝播させる
     Error.throwWithStackTrace(e, st);
   }
 });
