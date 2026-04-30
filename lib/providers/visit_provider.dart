@@ -9,20 +9,20 @@ import 'package:yu_map/providers/auth_provider.dart';
 /// ログインユーザーの総チェックイン件数。
 /// バッジ進捗表示・プロフィール統計に使用する。
 /// COUNT クエリを使い全件取得を避ける。
+///
+/// Bug-56 修正: エラー時は 0 を返さず rethrow する。
+/// 呼び出し側で `valueOrNull ?? 0` を使えばローディング/エラー中も安全に扱える。
+/// エラーを伝播させることで、ネットワーク障害時に誤った「0回」表示を防ぐ。
 final visitCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final client = ref.read(supabaseClientProvider);
   final session = ref.watch(sessionProvider);
   if (client == null || session == null) return 0;
-  try {
-    final response = await client
-        .from('visits')
-        .select()
-        .eq('user_id', session.user.id)
-        .count(CountOption.exact);
-    return response.count;
-  } catch (_) {
-    return 0;
-  }
+  final response = await client
+      .from('visits')
+      .select()
+      .eq('user_id', session.user.id)
+      .count(CountOption.exact);
+  return response.count;
 });
 
 // ── Visit entity (defined here per spec) ────────────────────────────────────
@@ -36,6 +36,10 @@ class Visit extends Equatable {
   /// 一括 JOIN するため N+1 クエリが発生しない。
   final String? facilityName;
 
+  /// JOIN で取得した施設タイプコード（例: 'onsen', 'sauna', 'sento'）。
+  /// facility_types(code) の JOIN で取得する（Feat-19対応）。
+  final String? facilityTypeCode;
+
   final String? note;
   final int? rating;
   final DateTime visitedAt;
@@ -46,6 +50,7 @@ class Visit extends Equatable {
     required this.userId,
     required this.facilityId,
     this.facilityName,
+    this.facilityTypeCode,
     this.note,
     this.rating,
     required this.visitedAt,
@@ -61,14 +66,17 @@ class Visit extends Equatable {
         : DateTime.now();
 
     // facilities は LEFT JOIN で取得したネストオブジェクト。
-    // SELECT の形式: 'facilities(name)' → json['facilities'] が Map で届く。
+    // SELECT の形式: 'facilities(name, facility_types(code))'
     final facilitiesJson = json['facilities'] as Map<String, dynamic>?;
+    final facilityTypesJson =
+        facilitiesJson?['facility_types'] as Map<String, dynamic>?;
 
     return Visit(
       id: json['id'] as String,
       userId: json['user_id'] as String,
       facilityId: json['facility_id'] as String,
       facilityName: facilitiesJson?['name'] as String?,
+      facilityTypeCode: facilityTypesJson?['code'] as String?,
       note: json['note'] as String?,
       rating: json['rating'] as int?,
       visitedAt: visitedAt,
@@ -95,15 +103,20 @@ final visitListProvider =
   // 施設名が存在しない場合は null になり、Visit.facilityId を表示する。
   final rows = await client
       .from('visits')
-      .select('*, facilities(name)')
+      .select('*, facilities(name, facility_types(code))')
       .eq('user_id', session.user.id)
       .order('visited_at', ascending: false)
       .limit(AppConstants.pageSize) as List;
   return rows.map((r) => Visit.fromJson(r as Map<String, dynamic>)).toList();
 });
 
-/// 訪問履歴全件表示画面用：全件を月別表示のために取得する（UX-V7-1対応）。
+/// 訪問履歴全件表示画面用：月別表示のために取得する（UX-V7-1対応）。
 /// プロフィール画面の「すべて見る」から遷移した場合に使用する。
+///
+/// Bug-53 修正: 上限なしだと 1000 件超でメモリ問題が起きる可能性があるため
+/// 500 件に制限する。温泉巡りの実用範囲内で十分なコレクションを表示できる。
+const int _visitAllLimit = 500;
+
 final visitAllProvider =
     FutureProvider.autoDispose<List<Visit>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
@@ -111,9 +124,10 @@ final visitAllProvider =
   if (client == null || session == null) return [];
   final rows = await client
       .from('visits')
-      .select('*, facilities(name)')
+      .select('*, facilities(name, facility_types(code))')
       .eq('user_id', session.user.id)
-      .order('visited_at', ascending: false) as List;
+      .order('visited_at', ascending: false)
+      .limit(_visitAllLimit) as List;
   return rows.map((r) => Visit.fromJson(r as Map<String, dynamic>)).toList();
 });
 

@@ -19,19 +19,18 @@ final myPlansProvider =
   final session = ref.watch(sessionProvider);
   if (client == null || session == null) return [];
 
-  try {
-    final data = await client
-        .from('onsen_plans')
-        .select()
-        .eq('user_id', session.user.id)
-        .order('updated_at', ascending: false);
+  // Bug-55 修正: catch(_){return [];} はエラーを握り潰し、空リストとエラーを
+  // 区別できなくなる。rethrow して AsyncError として伝播させ、
+  // PlansScreen の .when(error:...) で適切なエラー表示ができるようにする。
+  final data = await client
+      .from('onsen_plans')
+      .select()
+      .eq('user_id', session.user.id)
+      .order('updated_at', ascending: false);
 
-    return (data as List)
-        .map((e) => OnsenPlan.fromJson(e as Map<String, dynamic>))
-        .toList();
-  } catch (_) {
-    return [];
-  }
+  return (data as List)
+      .map((e) => OnsenPlan.fromJson(e as Map<String, dynamic>))
+      .toList();
 });
 
 // ── プラン操作 ────────────────────────────────────────────────────────────────

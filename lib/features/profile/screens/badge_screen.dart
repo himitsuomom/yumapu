@@ -86,8 +86,12 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
                         ),
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (e, _) =>
-                      Center(child: Text('取得エラー: $e')),
+                  // Bug-54 修正: エラー時はリトライボタン付きのエラーUIを表示する。
+                  // 以前は Text('取得エラー: $e') だけでリトライ手段がなかった。
+                  error: (e, _) => _RetryView(
+                    message: 'バッジの取得に失敗しました',
+                    onRetry: () => ref.invalidate(myBadgesProvider),
+                  ),
                 ),
 
                 // 全バッジタブ
@@ -124,8 +128,11 @@ class _BadgeScreenState extends ConsumerState<BadgeScreen>
                   },
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (e, _) =>
-                      Center(child: Text('取得エラー: $e')),
+                  // Bug-54 修正: 全バッジタブのエラーにもリトライUIを追加
+                  error: (e, _) => _RetryView(
+                    message: 'バッジ一覧の取得に失敗しました',
+                    onRetry: () => ref.invalidate(allBadgesProvider),
+                  ),
                 ),
               ],
             ),
@@ -674,6 +681,48 @@ class _EmojiIcon extends StatelessWidget {
       height: size,
       child: Center(
         child: Text(text, style: TextStyle(fontSize: size * 0.7)),
+      ),
+    );
+  }
+}
+
+// ── エラー表示（リトライ付き）─────────────────────────────────────────────────
+//
+// Bug-54 修正: バッジ画面のエラー時はリトライボタンを表示する。
+// 以前は Text('取得エラー: ...') だけで、ユーザーは画面を閉じて開き直すしかなかった。
+
+class _RetryView extends StatelessWidget {
+  const _RetryView({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off_outlined, size: 48, color: Color(0xFF9E9E9E)),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: const Color(0xFF757575)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('もう一度試す'),
+            ),
+          ],
+        ),
       ),
     );
   }
