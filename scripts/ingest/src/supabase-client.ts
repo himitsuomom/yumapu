@@ -41,7 +41,7 @@ export interface SourcePost {
 export async function upsertPosts(posts: SourcePost[]): Promise<number> {
   if (posts.length === 0) return 0;
 
-  // 1. バッチ内の id・content_hash 両方で重複除去
+  // バッチ内の id・content_hash 両方で重複除去
   const seenIds = new Set<string>();
   const seenHashes = new Set<string>();
   const deduped = posts.filter((p) => {
@@ -51,25 +51,13 @@ export async function upsertPosts(posts: SourcePost[]): Promise<number> {
     return true;
   });
 
-  // 2. DB の既存 id と content_hash を並列照合
-  const ids    = deduped.map((p) => p.id);
-  const hashes = deduped.map((p) => p.content_hash);
-  const [{ data: existingById }, { data: existingByHash }] = await Promise.all([
-    supabase.from('source_posts').select('id').in('id', ids),
-    supabase.from('source_posts').select('content_hash').in('content_hash', hashes),
-  ]);
-  const existingIdSet   = new Set((existingById   ?? []).map((r: { id: string }) => r.id));
-  const existingHashSet = new Set((existingByHash ?? []).map((r: { content_hash: string }) => r.content_hash));
-
-  // 3. 両方の制約でフィルタして新規のみ plain insert（衝突ゼロ保証）
-  const newPosts = deduped.filter(
-    (p) => !existingIdSet.has(p.id) && !existingHashSet.has(p.content_hash)
-  );
-  if (newPosts.length === 0) return 0;
-
-  const { error } = await supabase.from('source_posts').insert(newPosts);
+  // ON CONFLICT DO NOTHING で id(PK) と content_hash(UNIQUE) の両方の衝突を無視
+  // （URL長制限を避けるため DB 側の制約に委ねる）
+  const { error, count } = await supabase
+    .from('source_posts')
+    .upsert(deduped, { ignoreDuplicates: true, count: 'exact' });
   if (error) throw new Error(`upsertPosts: ${error.message}`);
-  return newPosts.length;
+  return count ?? deduped.length;
 }
 
 export interface FacilityRow {
