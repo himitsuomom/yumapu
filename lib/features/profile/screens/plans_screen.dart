@@ -96,49 +96,71 @@ class PlansScreen extends ConsumerWidget {
 
   // ── プラン作成ダイアログ ────────────────────────────────────────────────────
 
+  // UX-65: isPublic フラグを StatefulBuilder でダイアログ内管理する。
+  // 以前は isPublic = false のハードコードのみで、UI上で変更不可だった。
   Future<void> _showCreatePlanDialog(BuildContext context, WidgetRef ref) async {
     final titleController = TextEditingController();
     final descController = TextEditingController();
+    bool isPublic = false; // ダイアログ外側の変数で管理
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新しいプランを作成'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: const InputDecoration(
-                labelText: 'プラン名',
-                hintText: '例: 週末の日帰り温泉',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('新しいプランを作成'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: 'プラン名',
+                  hintText: '例: 週末の日帰り温泉',
+                ),
+                autofocus: true,
+                textInputAction: TextInputAction.next,
+                maxLength: 50,
               ),
-              autofocus: true,
-              textInputAction: TextInputAction.next,
-              maxLength: 50,
+              const SizedBox(height: 8),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'メモ（任意）',
+                  hintText: '例: 友達と行く予定',
+                ),
+                maxLines: 2,
+                maxLength: 200,
+              ),
+              const SizedBox(height: 4),
+              // UX-65: 公開/非公開トグル
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('公開プラン'),
+                subtitle: Text(
+                  isPublic
+                      ? '他のユーザーが閲覧できます'
+                      : '自分だけが見られます（非公開）',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                value: isPublic,
+                onChanged: (v) {
+                  setDialogState(() => isPublic = v);
+                },
+                dense: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('キャンセル'),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(
-                labelText: 'メモ（任意）',
-                hintText: '例: 友達と行く予定',
-              ),
-              maxLines: 2,
-              maxLength: 200,
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('作成'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('作成'),
-          ),
-        ],
       ),
     );
 
@@ -159,6 +181,7 @@ class PlansScreen extends ConsumerWidget {
           description: descController.text.trim().isEmpty
               ? null
               : descController.text.trim(),
+          isPublic: isPublic,
         );
 
     if (!context.mounted) return;

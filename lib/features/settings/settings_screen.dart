@@ -7,6 +7,7 @@ import 'package:yu_map/features/inquiry/inquiry_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/subscription_provider.dart';
 import 'package:yu_map/providers/theme_provider.dart';
+import 'package:yu_map/services/notification_service.dart';
 
 
 class SettingsScreen extends ConsumerWidget {
@@ -111,6 +112,15 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () =>
                   Navigator.of(context).pushNamed('/admin/owner-requests'),
             ),
+            const Divider(height: 1),
+          ],
+
+          // ── 通知 section ────────────────────────────────────────────────
+          // UX-62: 設定画面に通知オン/オフUIを追加する
+          // UX-66: 通知を一度断ったユーザーへの再許可導線を追加する
+          if (isSignedIn) ...[
+            const _SectionHeader(label: '通知'),
+            const _NotificationSettingsSection(),
             const Divider(height: 1),
           ],
 
@@ -342,6 +352,179 @@ class _SectionHeader extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
       ),
+    );
+  }
+}
+
+// ── 通知設定セクション ────────────────────────────────────────────────────────
+//
+// UX-62: 通知のオン/オフをアプリ内から切り替えられるUIを追加。
+// UX-66: 通知を一度断ったユーザーが再許可するための「アプリ設定を開く」導線を追加。
+//
+// 実装方針:
+// - 通知の有効状態は permission_handler パッケージで取得する代わりに
+//   NotificationService.isEnabled() を使う（iOS/Android 共通）。
+// - 許可状態が 'denied' の場合はトグルで再許可できないため、
+//   OS のアプリ設定画面に誘導するボタンを表示する。
+
+class _NotificationSettingsSection extends ConsumerStatefulWidget {
+  const _NotificationSettingsSection();
+
+  @override
+  ConsumerState<_NotificationSettingsSection> createState() =>
+      _NotificationSettingsSectionState();
+}
+
+class _NotificationSettingsSectionState
+    extends ConsumerState<_NotificationSettingsSection>
+    with WidgetsBindingObserver {
+  /// null = 読み込み中
+  bool? _isEnabled;
+  /// OSレベルで拒否されているか（= アプリ内トグルでは変更不可）
+  bool _isDenied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// アプリがフォアグラウンドに戻ったとき、OS設定変更を反映する（UX-66）
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadStatus();
+    }
+  }
+
+  Future<void> _loadStatus() async {
+    final svc = NotificationService.instance;
+    final enabled = await svc.isNotificationEnabled();
+    final denied = await svc.isNotificationDenied();
+    if (!mounted) return;
+    setState(() {
+      _isEnabled = enabled;
+      _isDenied = denied;
+    });
+  }
+
+  Future<void> _toggle(bool value) async {
+    if (_isDenied) {
+      // OS設定画面に誘導（UX-66）
+      await _openAppSettings();
+      return;
+    }
+    final svc = NotificationService.instance;
+    if (value) {
+      await svc.requestPermissionLazily();
+    } else {
+      // 通知を無効化する（iOS は直接無効化できないためOS設定に誘導）
+      await _openAppSettings();
+      return;
+    }
+    await _loadStatus();
+  }
+
+  Future<void> _openAppSettings() async {
+    // iOS/Android のアプリ通知設定画面を開く
+    // url_launcher で app-settings:// スキームを使う
+    final uri = Uri.parse('app-settings:');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('設定アプリを開けませんでした')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 読み込み中
+    if (_isEnabled == null) {
+      return const ListTile(
+        leading: Icon(Icons.notifications_outlined),
+        title: Text('プッシュ通知'),
+        trailing: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    // OS レベルで拒否済み → トグル無効 + 設定誘導ボタン
+    if (_isDenied) {
+      return Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.notifications_off_outlined,
+                color: Color(0xFF9E9E9E)),
+            title: const Text('プッシュ通知'),
+            subtitle: const Text('通知が拒否されています'),
+            trailing: Switch(
+              value: false,
+              onChanged: (_) => _openAppSettings(),
+            ),
+          ),
+          // UX-66: 再許可の導線
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 14, color: Color(0xFF757575)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'アプリの設定から通知を許可できます',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withAlpha(140),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _openAppSettings,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('設定を開く',
+                      style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 通常のトグル
+    return SwitchListTile(
+      secondary: Icon(
+        _isEnabled!
+            ? Icons.notifications_active_outlined
+            : Icons.notifications_outlined,
+      ),
+      title: const Text('プッシュ通知'),
+      subtitle: Text(
+        _isEnabled! ? 'チェックイン・バッジ・フォロー通知が届きます' : 'オフになっています',
+      ),
+      value: _isEnabled!,
+      onChanged: _toggle,
     );
   }
 }

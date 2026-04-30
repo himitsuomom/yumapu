@@ -1,6 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show WidgetsBinding;
+import 'package:flutter/widgets.dart' show ValueNotifier, WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/navigation/app_navigator.dart';
@@ -15,9 +15,16 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// フォアグラウンド/バックグラウンド通知ハンドリングを担当するサービス。
 ///
 /// 使い方:
-///   1. main.dart で Firebase 初期化後に initialize() を呼ぶ
-///   2. ログイン後に registerToken() を呼んでトークンを Supabase に保存
+///   1. main.dart で Firebase 初期化後に initialize() を呼ぶ（権限リクエストなし）
+///   2. ログイン後に registerToken() + requestPermissionLazily() を呼ぶ
 ///   3. ログアウト時に removeToken() を呼んで古いトークンを削除
+///
+/// ## 通知許可タイミングについて
+///
+/// 許可ダイアログをアプリ起動直後に表示するのはユーザー体験が悪い（許可率が低下する）。
+/// 代わりにログイン後の [requestPermissionLazily] を呼ぶことで、
+/// ユーザーがアプリの価値を理解した後に許可を求める設計にしている。
+/// 一度 granted/denied が確定した後は再リクエストしない（notDetermined の場合のみリクエスト）。
 class NotificationService {
   static final NotificationService _instance = NotificationService._();
   static NotificationService get instance => _instance;
@@ -42,22 +49,16 @@ class NotificationService {
     importance: Importance.high,
   );
 
+  /// アプリ起動時に呼ぶ初期化処理。
+  ///
+  /// 通知許可ダイアログは表示しない。すべてのハンドラーとチャンネルは
+  /// 許可状態に関わらず設定する（後から許可が得られた場合に備えるため）。
   Future<void> initialize() async {
     // バックグラウンドハンドラー登録（top-level 関数）
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // iOS/macOS の通知許可リクエスト
-    final settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      debugPrint('Push notification permission denied');
-      return;
-    }
-
     // Android 13+ のローカル通知チャンネル作成
+    // 許可状態に関わらず作成しておく（権限取得後にすぐ使えるよう）
     await _localNotifications
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
@@ -73,7 +74,7 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onLocalNotificationTapped,
     );
 
-    // iOS フォアグラウンドでもバナー表示
+    // iOS フォアグラウンドでもバナー表示（許可後に有効になる）
     await _messaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
@@ -93,6 +94,54 @@ class NotificationService {
     if (initialMessage != null) {
       _storePendingNavigation(initialMessage.data);
     }
+  }
+
+  /// ログイン後に呼ぶ: 通知許可を遅延リクエストする。
+  ///
+  /// - 既に granted/denied が確定済みの場合は何もしない（再リクエストしない）
+  /// - notDetermined（iOS: 未決定 / Android: 未リクエスト）の場合のみ許可ダイアログを表示
+  ///
+  /// ログイン後に呼ぶことで「アプリの価値を理解したユーザー」に許可を求めるため、
+  /// 起動直後に表示するより許可率が高くなる（industry standard パターン）。
+  Future<void> requestPermissionLazily() async {
+    final current = await _messaging.getNotificationSettings();
+    if (current.authorizationStatus != AuthorizationStatus.notDetermined) {
+      // 既に判定済み（granted / denied / provisional）→ 再リクエストしない
+      debugPrint(
+          'Notification permission already determined: ${current.authorizationStatus}');
+      return;
+    }
+
+    final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      debugPrint('Push notification permission denied by user');
+    } else {
+      debugPrint(
+          'Push notification permission granted: ${settings.authorizationStatus}');
+    }
+  }
+
+  /// 通知が有効かどうかを返す。
+  ///
+  /// UX-62 で設定画面の通知トグルの初期値を決定するために使用する。
+  /// granted / provisional → true、それ以外 → false。
+  Future<bool> isNotificationEnabled() async {
+    final settings = await _messaging.getNotificationSettings();
+    return settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional;
+  }
+
+  /// OS レベルで通知が拒否されているかどうかを返す。
+  ///
+  /// UX-66 対応: denied の場合はアプリ内のトグルでは変更できないため
+  /// OS の設定画面へ誘導するUIを表示するために使用する。
+  Future<bool> isNotificationDenied() async {
+    final settings = await _messaging.getNotificationSettings();
+    return settings.authorizationStatus == AuthorizationStatus.denied;
   }
 
   /// ログイン後に呼ぶ: FCM トークンを取得して Supabase に保存する
@@ -182,7 +231,7 @@ class NotificationService {
 
   /// cold start の保留ナビゲーションを実行する。
   ///
-  /// Navigator が利用可能になったタイミング（_AuthGate.initState など）で
+  /// Navigator が利用可能になったタイミング（app.dart の initState）で
   /// 一度だけ呼ぶ。保留ルートがなければ何もしない。
   void drainPendingNavigation() {
     final route = _pendingNavigation;
