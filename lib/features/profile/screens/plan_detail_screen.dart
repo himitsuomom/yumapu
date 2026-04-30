@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart' as ll;
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
@@ -60,6 +61,32 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen> {
   /// 地図セクションの表示/非表示フラグ
   bool _mapExpanded = true;
 
+  // ── アクション ──────────────────────────────────────────────────────────────
+
+  /// Feat-25: プランの施設リストをテキストシェアする。
+  ///
+  /// 施設名・住所を番号付きリスト形式で出力し、share_plus でネイティブの
+  /// シェアシートを表示する。施設がない場合は何もしない。
+  void _sharePlan(List<Facility> facilities) {
+    if (facilities.isEmpty) return;
+
+    final buffer = StringBuffer();
+    buffer.writeln('🗺️ 湯めぐりプラン「${widget.plan.title}」');
+    buffer.writeln();
+    for (var i = 0; i < facilities.length; i++) {
+      final f = facilities[i];
+      buffer.write('${i + 1}. ${f.name}');
+      if (f.address != null && f.address!.isNotEmpty) {
+        buffer.write('（${f.address}）');
+      }
+      buffer.writeln();
+    }
+    buffer.writeln();
+    buffer.write('#湯マップ #温泉 #湯めぐり');
+
+    Share.share(buffer.toString(), subject: '湯めぐりプラン「${widget.plan.title}」');
+  }
+
   // ── ビルド ──────────────────────────────────────────────────────────────────
 
   @override
@@ -70,6 +97,16 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.plan.title),
+        // Feat-25: 施設が1件以上ある場合にシェアボタンを表示する
+        actions: _localFacilities != null && _localFacilities!.isNotEmpty
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.ios_share_outlined),
+                  tooltip: 'プランを共有',
+                  onPressed: () => _sharePlan(_localFacilities!),
+                ),
+              ]
+            : null,
         bottom: widget.plan.facilityIds.isEmpty
             ? null
             : PreferredSize(
@@ -355,7 +392,9 @@ class _PlanMapSection extends StatelessWidget {
 
   /// UX-V13-4: Google Maps でルートを開く。
   /// 施設が1件の場合は目的地を指定、複数の場合は経由地を含むルート URL を生成する。
-  Future<void> _openGoogleMaps() async {
+  ///
+  /// Bug-58修正: launchUrl 失敗時に SnackBar でユーザーに通知する。
+  Future<void> _openGoogleMaps(BuildContext context) async {
     if (facilities.isEmpty) return;
     final Uri uri;
     if (facilities.length == 1) {
@@ -387,7 +426,14 @@ class _PlanMapSection extends StatelessWidget {
     }
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {}
+    } catch (e) {
+      // launchUrl 失敗時（Google Maps 未インストール等）にユーザーへ通知する
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('マップアプリを開けませんでした')),
+        );
+      }
+    }
   }
 
   /// 全施設が収まる中心点とズームレベルを計算する。
@@ -485,7 +531,7 @@ class _PlanMapSection extends StatelessWidget {
                 const Spacer(),
                 // UX-V13-4: Google Maps でルート案内を開くボタン
                 GestureDetector(
-                  onTap: _openGoogleMaps,
+                  onTap: () => _openGoogleMaps(context),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 4),

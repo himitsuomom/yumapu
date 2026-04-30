@@ -59,3 +59,7 @@ docs/next.md
 # Claude Code worktrees and config
 .claude/
 .claire/
+
+# Node.js dependencies
+node_modules/
+scripts/ingest/node_modules/
