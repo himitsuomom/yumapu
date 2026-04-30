@@ -65,7 +65,7 @@ class _EmptyFollowingFeedView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return RefreshIndicator(
-      onRefresh: () => ref.refresh(postFeedProvider.future),
+      onRefresh: () async => ref.read(postFeedProvider.notifier).load(),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: SizedBox(
