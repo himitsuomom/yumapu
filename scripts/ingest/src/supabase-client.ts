@@ -38,8 +38,10 @@ export interface SourcePost {
   raw?: object;
 }
 
-export async function upsertPosts(posts: SourcePost[]): Promise<number> {
-  if (posts.length === 0) return 0;
+// 戻り値: 実際にDBへ挿入されたpost_idのSet
+// (ON CONFLICT DO NOTHING でスキップされたIDは含まれない)
+export async function upsertPosts(posts: SourcePost[]): Promise<Set<string>> {
+  if (posts.length === 0) return new Set();
 
   // バッチ内の id・content_hash 両方で重複除去
   const seenIds = new Set<string>();
@@ -51,13 +53,12 @@ export async function upsertPosts(posts: SourcePost[]): Promise<number> {
     return true;
   });
 
-  // ON CONFLICT DO NOTHING で id(PK) と content_hash(UNIQUE) の両方の衝突を無視
-  // （URL長制限を避けるため DB 側の制約に委ねる）
-  const { error, count } = await supabase
-    .from('source_posts')
-    .upsert(deduped, { ignoreDuplicates: true, count: 'exact' });
+  // RPC で ON CONFLICT DO NOTHING（PK と content_hash UNIQUE 両方を無視）
+  const { data, error } = await supabase.rpc('insert_source_posts_safe', {
+    posts: deduped,
+  });
   if (error) throw new Error(`upsertPosts: ${error.message}`);
-  return count ?? deduped.length;
+  return new Set((data as { inserted_id: string }[]).map((r) => r.inserted_id));
 }
 
 export interface FacilityRow {

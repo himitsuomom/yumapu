@@ -40,8 +40,8 @@ export const RSS_SOURCES: Array<{ url: string; name: string }> = [
   // WordPress個人ブログ
   { url: 'https://yamaonsen.com/feed/',                  name: '山と温泉のきろく' },
   { url: 'https://onsenzanmaiblog.com/feed/',            name: 'KOUのふわふわ温泉' },
-  { url: 'https://hikyou.jp/feed/',                     name: '秘境温泉 神秘の湯' },
-  { url: 'https://sauna.color-hiyoko.com/feed/',        name: '東京サウナ日記' },
+  // { url: 'https://hikyou.jp/feed/',                     name: '秘境温泉 神秘の湯' },      // 404 (2026-04)
+  // { url: 'https://sauna.color-hiyoko.com/feed/',        name: '東京サウナ日記' },            // 404 (2026-04)
   { url: 'https://saunamizuburo.com/feed/',              name: 'Sauna&Waterbath' },
   { url: 'https://saturday-saunalover.com/feed/',       name: 'かいたくんのサウナブログ' },
   // note（RSS提供あり）

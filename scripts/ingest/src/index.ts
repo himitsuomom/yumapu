@@ -22,10 +22,12 @@ import type { SourcePost } from './supabase-client.ts';
 
 async function processAndSave(source: string, posts: SourcePost[], facilities: Awaited<ReturnType<typeof loadFacilities>>) {
   if (posts.length === 0) return;
-  await upsertPosts(posts);
+  const insertedIds = await upsertPosts(posts);
 
   let mentionCount = 0;
   for (const post of posts) {
+    // ON CONFLICT DO NOTHING でスキップされた投稿（content_hash重複）はFKエラー回避のためスキップ
+    if (!insertedIds.has(post.id)) continue;
     const text = post.content_text ?? (post.title ? stripHtml(post.title) : '');
     if (!text) continue;
     const mentions = buildMentions(post.id, text, facilities);
@@ -34,7 +36,7 @@ async function processAndSave(source: string, posts: SourcePost[], facilities: A
       mentionCount += mentions.length;
     }
   }
-  console.log(`[${source}] 投稿 ${posts.length}件 保存 / 施設言及 ${mentionCount}件`);
+  console.log(`[${source}] 投稿 ${insertedIds.size}件 新規保存 / 施設言及 ${mentionCount}件`);
 }
 
 async function main() {

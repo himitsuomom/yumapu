@@ -4,11 +4,12 @@ import { RSS_SOURCES, USER_AGENT, FETCH_DELAY_MS } from '../config.ts';
 import { contentHash } from '../supabase-client.ts';
 import type { SourcePost } from '../supabase-client.ts';
 
+// processEntities: false でパース（Hatena RSS が 1000件超エンティティを持つため上限回避）
+// エンティティのデコードは手動で行う
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
-  processEntities: true,
-  htmlEntities: true,
+  processEntities: false,
   allowBooleanAttributes: true,
 });
 
@@ -16,9 +17,21 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// XML/HTML エンティティを手動デコード（fast-xml-parser の展開上限回避後の後処理）
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
+}
+
 // Hatena 既知問題: 多重エンコードされた XML エンティティを前処理で正規化
 function preProcessXml(xml: string): string {
-  // &amp;amp; → &amp; → & のような多重エンコードを1段階展開
+  // &amp;amp; → &amp; のような多重エンコードを1段階展開
   return xml.replace(/&amp;(amp|lt|gt|quot|apos);/g, '&$1;');
 }
 
@@ -55,19 +68,20 @@ function extractEntries(parsed: Record<string, unknown>): Array<Record<string, u
 }
 
 function entryToPost(entry: Record<string, unknown>, sourceName: string): SourcePost | null {
-  const link =
+  const link = decodeEntities(
     (entry.link as { '@_href'?: string } | string | undefined) instanceof Object
       ? (entry.link as { '@_href'?: string })['@_href'] ?? ''
-      : String(entry.link ?? '');
+      : String(entry.link ?? '')
+  );
   if (!link) return null;
 
   // SHA-256 ハッシュでID生成（衝突防止）
   const id = `rss:${createHash('sha256').update(link).digest('hex').slice(0, 32)}`;
-  const title = String(entry.title ?? '').trim();
+  const title = decodeEntities(String(entry.title ?? '').trim());
   const rawContent = String(
     entry['content:encoded'] ?? entry.description ?? entry.content ?? entry.summary ?? ''
   );
-  const text = stripHtml(rawContent).slice(0, 2000);
+  const text = stripHtml(decodeEntities(rawContent)).slice(0, 2000);
   const published = parseDate(entry.pubDate ?? entry.published ?? entry['dc:date']);
 
   return {
