@@ -42,6 +42,10 @@ class NotificationService {
   /// '/facility' の場合は String 型の施設IDを保持する。
   Object? _pendingNavigationArgs;
 
+  /// Bug-57修正: cold start 時にタブ切り替えを保留するインデックス。
+  /// [drainPendingNavigation] が呼ばれた時点で pendingTabSwitch に設定する。
+  int? _pendingTabIndex;
+
   static const _androidChannel = AndroidNotificationChannel(
     'yumap_default',
     '湯マップ通知',
@@ -233,62 +237,88 @@ class NotificationService {
   ///
   /// Navigator が利用可能になったタイミング（app.dart の initState）で
   /// 一度だけ呼ぶ。保留ルートがなければ何もしない。
+  ///
+  /// Bug-57修正: タブ切り替え（_pendingTabIndex）と pushNamed（_pendingNavigation）を
+  /// それぞれ適切な方法で処理する。
   void drainPendingNavigation() {
+    final tabIndex = _pendingTabIndex;
     final route = _pendingNavigation;
-    if (route == null) return;
     final args = _pendingNavigationArgs;
+
+    _pendingTabIndex = null;
     _pendingNavigation = null;
     _pendingNavigationArgs = null;
-    // postFrameCallback: ウィジェットツリー構築後に遷移する
+
+    // postFrameCallback: ウィジェットツリー（HomeShell含む）構築後に実行する
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      appNavigatorKey.currentState?.pushNamed(route, arguments: args);
+      // タブ切り替え優先
+      if (tabIndex != null) {
+        pendingTabSwitch.value = tabIndex;
+        return;
+      }
+      if (route != null) {
+        appNavigatorKey.currentState?.pushNamed(route, arguments: args);
+      }
     });
   }
 
-  /// 通知データからルート文字列を決定する（引数不要なルート用）。
+  /// 通知タイプからタブインデックスを決定する。
   ///
-  /// type: 'like' | 'comment' → '/feed'（フィード画面でレスポンスを確認）
-  /// type: 'follow'           → '/profile'（自分のプロフィールで通知確認）
-  /// type: 'checkin_badge'    → '/badges'（バッジ獲得画面に遷移）
-  /// type: 'facility'         → null（引数が必要なため _handleNavigation で個別処理）
-  /// 未知の type              → null（遷移しない）
-  String? _routeForData(Map<String, dynamic> data) {
+  /// Bug-57修正: フィード・プロフィールへの遷移は pushNamed ではなく
+  /// pendingTabSwitch 経由のタブ切り替えを使用する。
+  /// タブに対応しない通知タイプ（badges等）は null を返す。
+  ///
+  /// type: 'like' | 'comment' → tab 2（フィード）
+  /// type: 'follow'           → tab 4（プロフィール）
+  /// それ以外                 → null（タブ切り替えなし）
+  int? _tabIndexForData(Map<String, dynamic> data) {
     final type = data['type'] as String?;
     switch (type) {
       case 'like':
       case 'comment':
-        return '/feed';
+        return 2; // フィードタブ
       case 'follow':
-        return '/profile';
-      case 'checkin_badge':
-        return '/badges';
+        return 4; // プロフィールタブ
       default:
-        if (type != 'facility') {
-          debugPrint('Notification: unknown type=$type');
-        }
         return null;
     }
   }
 
   /// 通知データを保留キューに積む（cold start 用）。
+  ///
+  /// Bug-57修正: タブ系はタブインデックスを保存し、それ以外は pushNamed を保存する。
   void _storePendingNavigation(Map<String, dynamic> data) {
     final type = data['type'] as String?;
+
     if (type == 'facility') {
       final facilityId = data['target_id'] as String?;
       if (facilityId != null && facilityId.isNotEmpty) {
         _pendingNavigation = '/facility';
         _pendingNavigationArgs = facilityId;
       }
-    } else {
-      _pendingNavigation = _routeForData(data);
+      return;
+    }
+
+    final tabIndex = _tabIndexForData(data);
+    if (tabIndex != null) {
+      _pendingTabIndex = tabIndex;
+      return;
+    }
+
+    // タブでもfacilityでもない場合（checkin_badge等）はpushNamed
+    if (type == 'checkin_badge') {
+      _pendingNavigation = '/badges';
       _pendingNavigationArgs = null;
+    } else {
+      debugPrint('Notification (cold start): unknown type=$type');
     }
   }
 
   /// 通知タイプに応じた画面遷移。
   ///
+  /// Bug-57修正: フィード・プロフィールは pendingTabSwitch 経由でタブ切り替え。
+  /// バッジ・施設詳細は pushNamed のまま（タブに存在しない独立画面）。
   /// appNavigatorKey 経由で Navigator を操作するため Context 不要。
-  /// Navigator がまだ存在しない場合（極めて短時間）は保留キューに積む。
   void _handleNavigation(Map<String, dynamic> data) {
     final type = data['type'] as String?;
 
@@ -307,17 +337,31 @@ class NotificationService {
       return;
     }
 
-    final route = _routeForData(data);
-    if (route == null) return;
-
-    final navigator = appNavigatorKey.currentState;
-    if (navigator == null) {
-      // Navigator がまだ起動していない場合は保留キューに積む
-      _pendingNavigation = route;
-      _pendingNavigationArgs = null;
+    // タブ切り替え対象（like/comment → フィード、follow → プロフィール）
+    final tabIndex = _tabIndexForData(data);
+    if (tabIndex != null) {
+      // HomeShell が存在すれば即座に切り替え、未起動なら保留
+      if (appNavigatorKey.currentState != null) {
+        pendingTabSwitch.value = tabIndex;
+      } else {
+        _pendingTabIndex = tabIndex;
+      }
       return;
     }
-    navigator.pushNamed(route);
+
+    // タブ以外（checkin_badge → バッジ画面）は pushNamed
+    if (type == 'checkin_badge') {
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null) {
+        _pendingNavigation = '/badges';
+        _pendingNavigationArgs = null;
+        return;
+      }
+      navigator.pushNamed('/badges');
+      return;
+    }
+
+    debugPrint('Notification: unknown type=$type');
   }
 
   String _encodePayload(Map<String, dynamic> data) =>

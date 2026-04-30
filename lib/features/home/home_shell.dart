@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yu_map/core/navigation/app_navigator.dart';
 import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/features/favorites/favorites_screen.dart';
 import 'package:yu_map/features/feed/screens/feed_screen.dart';
@@ -66,6 +67,31 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     Future.microtask(() {
       if (mounted) ref.read(favoritesProvider.notifier).load();
     });
+    // Bug-57修正: 通知サービスからのタブ切り替えリクエストを監視する。
+    // notification_service.dart が pendingTabSwitch.value を更新すると
+    // HomeShell が即座にタブを切り替え、BottomNavigationBar とも同期する。
+    pendingTabSwitch.addListener(_onPendingTabSwitch);
+  }
+
+  @override
+  void dispose() {
+    pendingTabSwitch.removeListener(_onPendingTabSwitch);
+    super.dispose();
+  }
+
+  /// [pendingTabSwitch] に値がセットされたときにタブを切り替える。
+  ///
+  /// 処理後に null へリセットして二重実行を防ぐ。
+  void _onPendingTabSwitch() {
+    final index = pendingTabSwitch.value;
+    if (index == null) return;
+    pendingTabSwitch.value = null; // リセット（二重処理防止）
+    if (!mounted) return;
+    setState(() {
+      _visitedIndices.add(index);
+      _currentIndex = index;
+    });
+    ref.read(homeTabIndexProvider.notifier).state = index;
   }
 
   @override
