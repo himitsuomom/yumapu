@@ -71,6 +71,19 @@ class CommentNotifier extends StateNotifier<AsyncValue<List<Comment>>> {
       'text': trimmed,
     });
 
+    // 楽観的UI: 先にローカルリストへ新しいコメントを追加する
+    // （load() を呼ぶと AsyncLoading → 一瞬リストが消える Bug-37 の対策）
+    final newComment = Comment(
+      id: 'optimistic_${DateTime.now().millisecondsSinceEpoch}',
+      userId: session.user.id,
+      user: userName,
+      avatar: userAvatar,
+      text: trimmed,
+      time: DateTime.now().toIso8601String(),
+    );
+    final current = state.valueOrNull ?? [];
+    state = AsyncData([...current, newComment]);
+
     // フィードの commentsCount を楽観的UI更新で即時反映
     // （DBトリガーで posts.comments_count は更新済みなので整合性あり）
     final feedNotifier = _ref.read(postFeedProvider.notifier);
@@ -83,8 +96,23 @@ class CommentNotifier extends StateNotifier<AsyncValue<List<Comment>>> {
       feedNotifier.updateState(updated);
     }
 
-    // コメントリストを再取得
-    await load();
+    // バックグラウンドで再取得して楽観的データをサーバーの正式IDで置き換える
+    // AsyncLoading をセットせず静かにリフレッシュ（フラッシュなし）
+    try {
+      final client = _ref.read(supabaseClientProvider);
+      if (client == null) return;
+      final data = await client
+          .from('comments')
+          .select()
+          .eq('post_id', _postId)
+          .order('created_at', ascending: true);
+      final comments = (data as List)
+          .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+          .toList();
+      state = AsyncData(comments);
+    } catch (_) {
+      // バックグラウンド取得失敗時は楽観的データをそのまま表示し続ける
+    }
   }
 
   /// 自分のコメントを削除する

@@ -229,7 +229,9 @@ class _RankingScreenState extends ConsumerState<RankingScreen> {
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
-                        label: Text(option.label),
+                        // shortLabel を使い、括弧書きで各ソートの意味を補足する。
+                        // 例: 「探索PT（訪問）」→ チェックイン回数が多いほど有利とわかる。
+                        label: Text(option.shortLabel),
                         selected: isSelected,
                         onSelected: (selected) {
                           if (selected) {

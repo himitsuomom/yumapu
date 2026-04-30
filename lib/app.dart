@@ -35,7 +35,7 @@ import 'package:yu_map/core/navigation/app_navigator.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/connectivity_provider.dart';
 import 'package:yu_map/providers/theme_provider.dart';
-import 'package:yu_map/screens/subscription_screen.dart';
+import 'package:yu_map/features/subscription/screens/subscription_screen.dart';
 import 'package:yu_map/services/notification_service.dart';
 
 class YuMapApp extends ConsumerWidget {
@@ -117,7 +117,7 @@ class YuMapApp extends ConsumerWidget {
               builder: (_) => OwnerFacilityEditScreen(facility: facility),
             );
           // E-1修正: /review ルートは削除済み（レビュー投稿は ReviewBottomSheet 経由）
-          // write_review_screen.dart は手動削除待ち（git rm で対応）
+          // write_review_screen.dart: `git rm lib/features/reviews/screens/write_review_screen.dart` で削除する
           case '/plan-detail':
             final plan = settings.arguments as OnsenPlan;
             return MaterialPageRoute<void>(
@@ -166,6 +166,8 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
 
   static const _storage = FlutterSecureStorage();
   static const _guestModeKey = 'guest_mode';
+  /// UX-59: 初回ログイン後のウェルカムガイダンスを表示済みかどうかを記録するキー。
+  static const _welcomeShownKey = 'welcome_guidance_shown';
 
   // Deep Linking: app_links によるURL受信サブスクリプション
   final _appLinks = AppLinks();
@@ -244,6 +246,56 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
     super.dispose();
   }
 
+  /// UX-59: 初回ログイン後のウェルカムガイダンスを表示する。
+  ///
+  /// flutter_secure_storage の [_welcomeShownKey] が未設定の場合のみ表示し、
+  /// 表示後にフラグを書き込むことで2回目以降のログインでは出ないようにする。
+  Future<void> _showWelcomeIfFirst() async {
+    final shown = await _storage.read(key: _welcomeShownKey);
+    if (shown == 'true') return;
+    await _storage.write(key: _welcomeShownKey, value: 'true');
+
+    // Navigator が確定してから表示するため postFrameCallback を使う
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Text('🎉', style: TextStyle(fontSize: 24)),
+              SizedBox(width: 8),
+              Text('ようこそ！'),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '湯マップへようこそ！',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              SizedBox(height: 8),
+              Text('📍 地図で近くの温泉・銭湯・サウナを探せます'),
+              SizedBox(height: 4),
+              Text('✅ 訪問した施設にチェックインしてバッジを集めよう'),
+              SizedBox(height: 4),
+              Text('📖 口コミ・写真を投稿してみんなと共有しよう'),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('はじめる'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
   /// オンボーディング完了フラグとゲストモードフラグを並行して読み込む。
   ///
   /// Bug-V9-4対応: ゲストモードを flutter_secure_storage で永続化する。
@@ -285,6 +337,9 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         // これにより isGuestMode が stale に残る状態不整合を防ぐ。
         if (next) {
           ref.read(guestModeProvider.notifier).state = false;
+          // UX-59: ログイン直後に初回のみウェルカムガイダンスを表示する。
+          // 表示済みフラグがなければ postFrameCallback でダイアログを出す。
+          _showWelcomeIfFirst();
         }
       }
     });

@@ -46,12 +46,16 @@ class _OnboardingPage {
     required this.title,
     required this.description,
     required this.backgroundColor,
+    this.note,
   });
 
   final String emoji;
   final String title;
   final String description;
   final Color backgroundColor;
+
+  /// 説明文の下に表示する補足情報（アイコン + テキスト）。null のときは非表示。
+  final String? note;
 }
 
 const _pages = [
@@ -74,11 +78,14 @@ const _pages = [
     backgroundColor: Color(0xFFE3F2FD),
   ),
   // UX-V13-6: 湯めぐりプラン機能の紹介（アプリの差別化ポイント）
+  // UX-V28: 「プラン」が初見で分かりにくいため「旅のしおり」で言い換え。
+  //         位置情報の説明を note として追加（突然ダイアログが出る問題を解消）。
   _OnboardingPage(
     emoji: '🗺️',
-    title: '湯めぐりプランを作ろう',
-    description: '行きたい施設をまとめて「湯めぐりプラン」に登録。\n地図でルートを確認して、旅行の計画をスムーズに立てられます。',
+    title: '行きたい施設を旅のしおりにまとめよう',
+    description: '「湯めぐりプラン」は旅行前に作れるお風呂リスト。\n行きたい施設を登録して、計画的な湯めぐりを楽しめます。',
     backgroundColor: Color(0xFFF3E5F5),
+    note: '📍 近くの施設を探すために現在地の使用許可をお願いします',
   ),
 ];
 
@@ -342,6 +349,27 @@ class _OnboardingPageView extends StatelessWidget {
               height: 1.6,
             ),
           ),
+          // 補足ノート（位置情報説明など）。null のときは非表示。
+          if (page.note != null) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(180),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.withAlpha(60)),
+              ),
+              child: Text(
+                page.note!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[700],
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

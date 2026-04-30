@@ -414,12 +414,6 @@ class _PostAvatar extends StatelessWidget {
   }
 }
 
-// ── 空フィード表示 ─────────────────────────────────────────────────────────────
-
-/// 投稿が0件の場合に表示するウィジェット。
-/// RefreshIndicator が機能するには scrollable な子が必要なため
-/// ListView でラップしてプルリフレッシュを有効にする（UX-V11-5対応）。
-class _EmptyFeedView extends ConsumerWidget {
   const _EmptyFeedView();
 
   @override
@@ -475,42 +469,64 @@ class _EmptyFeedView extends ConsumerWidget {
 ///
 /// UX-V25-2: ランキング画面へのCTAボタンを追加。
 /// フォロー相手が0人の初期状態で「どこに行けばいいか分からない」を解消する。
-class _EmptyFollowingFeedView extends StatelessWidget {
+class _EmptyFollowingFeedView extends ConsumerWidget {
   const _EmptyFollowingFeedView();
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('👥', style: TextStyle(fontSize: 64)),
-            const SizedBox(height: 16),
-            Text(
-              'フォロー中の投稿はありません',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RefreshIndicator(
+      // プルリフレッシュでフォロー中フィードを再取得（Bug-39対応）
+      onRefresh: () => ref.refresh(postFeedProvider.future),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.6,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('👥', style: TextStyle(fontSize: 64)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'フォロー中の投稿はありません',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'ランキングやフィードの投稿者プロフィールから\nユーザーをフォローしてみましょう',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: const Color(0xFF757575)),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  // ランキングへの導線ボタン
+                  FilledButton.icon(
+                    icon: const Icon(Icons.leaderboard_outlined, size: 18),
+                    label: const Text('ランキングでユーザーを探す'),
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/ranking'),
+                  ),
+                  const SizedBox(height: 12),
+                  // 「すべて」タブへの導線（UX-48対応）
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.public_outlined, size: 18),
+                    label: const Text('すべての投稿を見る'),
+                    onPressed: () {
+                      // フォロー中フィルターをOFFにして全投稿を表示
+                      ref
+                          .read(postFeedProvider.notifier)
+                          .setFollowingOnlyFilter(false);
+                    },
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'ランキングやフィードの投稿者プロフィールから\nユーザーをフォローしてみましょう',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: const Color(0xFF757575)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            // UX-V25-2: ランキングへの導線ボタン
-            // フォロー相手がいない初期状態のユーザーが次の行動を取りやすくする
-            FilledButton.icon(
-              icon: const Icon(Icons.leaderboard_outlined, size: 18),
-              label: const Text('ランキングでユーザーを探す'),
-              onPressed: () => Navigator.of(context).pushNamed('/ranking'),
-            ),
-          ],
+          ),
         ),
       ),
     );

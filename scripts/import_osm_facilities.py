@@ -127,8 +127,10 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Overpass API のミラーリスト（順に試みる）
 OVERPASS_URLS = [
-    "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://z.overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
 OVERPASS_TIMEOUT = 180  # 秒
@@ -385,21 +387,21 @@ def _calc_quality_score(tags: dict) -> int:
 def upsert_to_supabase(records: list[dict], supabase_url: str, service_key: str) -> tuple[int, int]:
     """
     Supabase に施設レコードを UPSERT する。
-    osm_id が同じレコードは更新される（重複防止）。
+    PostgREST の geography 型解決エラー (42704) を回避するため、
+    直接テーブルに POST するのではなく batch_upsert_osm_facilities RPC を使用する。
 
     Returns:
-        (inserted_count, updated_count) のタプル
+        (inserted_count, skipped_count) のタプル
     """
     headers = {
         "apikey": service_key,
         "Authorization": f"Bearer {service_key}",
         "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=representation",
     }
 
-    url = f"{supabase_url}/rest/v1/facilities"
+    rpc_url = f"{supabase_url}/rest/v1/rpc/batch_upsert_osm_facilities"
     inserted = 0
-    updated = 0
+    skipped = 0
 
     # バッチ処理（Supabase の POST に上限があるため分割）
     for i in range(0, len(records), SUPABASE_BATCH_SIZE):
@@ -408,40 +410,27 @@ def upsert_to_supabase(records: list[dict], supabase_url: str, service_key: str)
 
         try:
             resp = requests.post(
-                url,
+                rpc_url,
                 headers=headers,
-                json=batch,
-                params={"on_conflict": "osm_id"},
-                timeout=30,
+                json={"records": batch},
+                timeout=60,
             )
             resp.raise_for_status()
             result = resp.json()
-            if isinstance(result, list):
-                inserted += len(result)
-            logger.info(f"    ✓ {len(batch)} 件完了")
+            batch_inserted = result.get("inserted", 0)
+            batch_skipped = result.get("skipped", 0)
+            inserted += batch_inserted
+            skipped += batch_skipped
+            logger.info(f"    ✓ 挿入/更新: {batch_inserted} 件, スキップ: {batch_skipped} 件")
         except requests.exceptions.HTTPError as e:
             logger.error(f"    ✗ HTTP エラー: {e.response.status_code} - {e.response.text[:200]}")
-            # バッチ失敗時は1件ずつリトライ（問題レコードのみスキップ）
-            for record in batch:
-                try:
-                    r = requests.post(
-                        url,
-                        headers=headers,
-                        json=[record],
-                        params={"on_conflict": "osm_id"},
-                        timeout=10,
-                    )
-                    r.raise_for_status()
-                    inserted += 1
-                except Exception as inner_e:
-                    logger.warning(f"    スキップ: {record.get('name')} ({inner_e})")
         except Exception as e:
             logger.error(f"    予期しないエラー: {e}")
 
         # Supabase レート制限対策（バッチ間に短い待機）
-        time.sleep(0.5)
+        time.sleep(0.3)
 
-    return inserted, updated
+    return inserted, skipped
 
 
 # ─────────────────────────────────────────────────────────────────────────────

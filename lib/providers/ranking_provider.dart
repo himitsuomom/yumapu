@@ -51,6 +51,21 @@ extension RankingSortByExtension on RankingSortBy {
     }
   }
 
+  /// ChoiceChip に表示する短いラベル（説明付き）。
+  /// 初見ユーザーが各ソート種別の意味をすぐに理解できるようにする。
+  String get shortLabel {
+    switch (this) {
+      case RankingSortBy.totalPoints:
+        return '合計PT（総合）';
+      case RankingSortBy.explorerPoints:
+        return '探索PT（訪問）';
+      case RankingSortBy.socialPoints:
+        return '社交PT（投稿）';
+      case RankingSortBy.visitCount:
+        return '訪問数';
+    }
+  }
+
   /// ランキング行のトレーリングに表示する値を RankedUser から取り出す
   String trailingValue(RankedUser u) {
     switch (this) {

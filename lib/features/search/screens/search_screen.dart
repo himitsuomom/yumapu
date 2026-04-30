@@ -14,6 +14,7 @@ import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/providers/navigation_provider.dart';
+import 'package:yu_map/providers/location_provider.dart';
 
 part 'search_screen_sub_widgets.dart';
 // FacilitySortBy は facility_provider.dart 経由でエクスポートされているため
@@ -221,6 +222,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final params = ref.watch(facilitySearchParamsProvider);
     final facilityAsync = ref.watch(facilityListProvider);
+    // 距離順ソートのためにcurrentLocationProviderをwatch。
+    // nullなら位置情報未取得（権限なし or MapScreen未起動）。
+    final currentLocation = ref.watch(currentLocationProvider);
+    final hasLocation = currentLocation != null;
     final hasActiveFilters = params.searchQuery != null ||
         params.facilityTypeId != null ||
         params.amenityIds.isNotEmpty ||
@@ -382,7 +387,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                   const SizedBox(width: 6),
                   _SortChip(
-                    label: '距離順',
+                    label: hasLocation ? '距離順' : '距離順 📍',
                     selected: params.sortBy == FacilitySortBy.distance,
                     onSelected: (_) => _onSortChanged(FacilitySortBy.distance),
                   ),
@@ -390,6 +395,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
           ),
+          // 距離順選択中かつ位置情報未取得の場合に案内テキストを表示
+          if (params.sortBy == FacilitySortBy.distance && !hasLocation)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.location_off,
+                    size: 14,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '位置情報を取得中です。地図タブを開くと近い順に並びます。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const Divider(height: 1),
           // ── Result list ──────────────────────────────────────────────────
           Expanded(

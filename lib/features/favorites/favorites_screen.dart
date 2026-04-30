@@ -151,16 +151,51 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   Widget build(BuildContext context) {
     final isSignedIn = ref.watch(isSignedInProvider);
 
-    // 未ログイン時はログインを促す
+    // 未ログイン時はベネフィット訴求付きでログインを促す
     if (!isSignedIn) {
       return Scaffold(
         appBar: AppBar(title: const Text('お気に入り')),
-        body: EmptyWidget(
-          icon: Icons.favorite_border,
-          message: 'お気に入りを見るにはログインしてください',
-          action: ElevatedButton(
-            onPressed: () => Navigator.of(context).pushNamed('/login'),
-            child: const Text('ログイン'),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.favorite_border,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.primary.withAlpha(180),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'お気に入りに登録しよう',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '行きたい温泉・銭湯・サウナを\nハートで保存すれば、次から\nすぐに見つけられます。',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withAlpha(160),
+                        height: 1.6,
+                      ),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/login'),
+                    child: const Text('ログイン / 新規登録'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

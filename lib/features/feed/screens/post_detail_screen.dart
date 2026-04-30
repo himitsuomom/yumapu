@@ -25,6 +25,39 @@ class PostDetailScreen extends ConsumerWidget {
   /// コメント入力欄を自動フォーカスするかどうか。
   final bool focusComment;
 
+  /// 投稿削除確認ダイアログを表示し、OKなら削除して前の画面に戻る
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('投稿を削除しますか？'),
+        content: const Text('この操作は取り消せません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(postFeedProvider.notifier).deletePost(post.id);
+      if (context.mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('削除に失敗しました。もう一度お試しください。')),
+        );
+      }
+    }
+  }
+
   /// 投稿編集ダイアログを表示する（C-3対応）
   Future<void> _showEditDialog(
       BuildContext context, WidgetRef ref, String currentContent) async {
@@ -95,6 +128,8 @@ class PostDetailScreen extends ConsumerWidget {
               onSelected: (value) {
                 if (value == 'edit') {
                   _showEditDialog(context, ref, latestPost.content);
+                } else if (value == 'delete') {
+                  _confirmDelete(context, ref);
                 }
               },
               itemBuilder: (_) => [
@@ -105,6 +140,16 @@ class PostDetailScreen extends ConsumerWidget {
                       Icon(Icons.edit_outlined, size: 18),
                       SizedBox(width: 8),
                       Text('編集'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('削除', style: TextStyle(color: Colors.red)),
                     ],
                   ),
                 ),
@@ -605,8 +650,9 @@ class _CommentInputBarState extends ConsumerState<_CommentInputBar> {
           left: 12,
           right: 8,
           top: 8,
-          // キーボードが出たときにテキストフィールドが隠れないよう
-          // MediaQuery でキーボードの高さ分だけ余白を追加
+          // Scaffold の resizeToAvoidBottomInset（デフォルト true）により
+          // キーボード表示時は Scaffold 全体が縮小するため追加補正は不要。
+          // 固定 8px はバーと画面下端の余白として維持する。
           bottom: 8,
         ),
         child: Row(

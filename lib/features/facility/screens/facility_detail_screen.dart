@@ -28,6 +28,8 @@ import 'package:yu_map/services/analytics_service.dart';
 import 'package:yu_map/services/checkin_service.dart';
 import 'package:yu_map/services/review_service.dart';
 
+part 'facility_detail_screen_sub_widgets.dart';
+
 class FacilityDetailScreen extends ConsumerStatefulWidget {
   const FacilityDetailScreen({super.key, required this.facilityId});
 
@@ -208,18 +210,10 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   }
 
   // ── Check-in dialog ───────────────────────────────────────────────────────
-  // ロジックは lib/services/checkin_service.dart の CheckinService に共通化。
 
-  // ── Sticky checkin bar ────────────────────────────────────────────────────
-  //
-  // UX-V27-1/2: Scaffold.bottomNavigationBar として固定表示する。
-  // スクロール位置に関係なくチェックインボタンが常に見えるため、
-  // ページ下部のレビューを読んでいてもワンタップでチェックインできる。
-  //
-  // - ログイン中:      FilledButton「チェックイン」（処理中はスピナー表示）
-  // - ゲストモード中: OutlinedButton「ログインしてチェックイン」
-  //                   タップすると GuestRestrictionDialog でログインを促す
-  Widget _buildStickyCheckinBar(Facility facility, bool isSignedIn) {
+  /// UX-61: チェックイン機能が Feature Flag でオフの場合に表示する「準備中」バー。
+  /// 機能の存在をユーザーに伝え、完全に消えてしまうことを防ぐ。
+  Widget _buildCheckinComingSoonBar() {
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -234,35 +228,26 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
         child: SizedBox(
           height: 48,
           width: double.infinity,
-          child: isSignedIn
-              ? FilledButton.icon(
-                  icon: _isCheckingIn
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.check_circle_outline),
-                  label: const Text('チェックイン'),
-                  onPressed:
-                      _isCheckingIn ? null : () => _showCheckinDialog(facility),
-                )
-              : OutlinedButton.icon(
-                  icon: const Icon(Icons.login),
-                  label: const Text('ログインしてチェックイン'),
-                  onPressed: () async {
-                    final goLogin = await GuestRestrictionDialog.show(
-                      context,
-                      featureName: 'チェックイン',
-                    );
-                    if (goLogin == true && mounted) {
-                      Navigator.of(context).pushNamed('/login');
-                    }
-                  },
-                ),
+          child: OutlinedButton.icon(
+            icon: Icon(
+              Icons.hourglass_empty_outlined,
+              size: 18,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            label: Text(
+              'チェックイン（近日公開）',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
+              ),
+            ),
+            // 準備中のため操作不可
+            onPressed: null,
+          ),
         ),
       ),
     );
@@ -400,15 +385,26 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
         : <String>{};
     // レビュー削除: 現在ログイン中のユーザーIDを取得（自分のレビューのみ削除可）
     final currentUserId = ref.watch(sessionProvider)?.user.id;
+    final photos =
+        ref.watch(facilityPhotosProvider(facility.id)).valueOrNull ?? [];
 
     return Scaffold(
       // UX-V27-1: チェックインボタンをScaffold底部に固定する。
       // スクロールしてレビューを読んでいても常にチェックインできる。
       // UX-V27-2: ゲストモードでは「ログインしてチェックイン」を表示し、
       //           タップするとログイン誘導ダイアログが出る。
+      // UX-61: isCheckinEnabled == false の場合も「準備中」バーを表示し、
+      //        機能が存在することをユーザーに伝える（完全非表示を避ける）。
       bottomNavigationBar: AppConfig.isCheckinEnabled && (isSignedIn || isGuestMode)
-          ? _buildStickyCheckinBar(facility, isSignedIn)
-          : null,
+          ? _StickyCheckinBar(
+              facility: facility,
+              isSignedIn: isSignedIn,
+              isCheckingIn: _isCheckingIn,
+              onCheckin: () => _showCheckinDialog(facility),
+            )
+          : !AppConfig.isCheckinEnabled
+              ? _buildCheckinComingSoonBar()
+              : null,
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
@@ -430,166 +426,12 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              background: Builder(
-                builder: (context) {
-                  final photos = ref
-                          .watch(facilityPhotosProvider(facility.id))
-                          .valueOrNull ??
-                      [];
-
-                  if (photos.isNotEmpty) {
-                    // 写真カルーセル（PageView）+ タップでフルスクリーン表示
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        PageView.builder(
-                          controller: _headerPageController,
-                          itemCount: photos.length,
-                          onPageChanged: (i) =>
-                              setState(() => _headerPhotoIndex = i),
-                          itemBuilder: (context, i) => GestureDetector(
-                            // タップすると PhotoGalleryViewer をフルスクリーンで表示する。
-                            // ピンチズーム・スワイプ操作が可能になる。
-                            onTap: () => PhotoGalleryViewer.show(
-                              context,
-                              photos: photos,
-                              initialIndex: _headerPhotoIndex,
-                            ),
-                            child: Image.network(
-                              photos[i],
-                              fit: BoxFit.cover,
-                              // ネットワークエラー時はプレースホルダーを表示
-                              errorBuilder: (_, __, ___) => ColoredBox(
-                                color: Colors.grey.shade200,
-                                child: const Center(
-                                  child: Icon(Icons.image_not_supported,
-                                      size: 48, color: Colors.grey),
-                                ),
-                              ),
-                              loadingBuilder: (_, child, progress) =>
-                                  progress == null
-                                      ? child
-                                      : ColoredBox(
-                                          color: Colors.grey.shade100,
-                                          child: const Center(
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2),
-                                          ),
-                                        ),
-                            ),
-                          ),
-                        ),
-                        // 複数枚の場合のみページインジケーターを表示
-                        if (photos.length > 1)
-                          Positioned(
-                            bottom: 12,
-                            left: 0,
-                            right: 0,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(
-                                photos.length,
-                                (i) => AnimatedContainer(
-                                  duration:
-                                      const Duration(milliseconds: 200),
-                                  width: _headerPhotoIndex == i ? 16 : 6,
-                                  height: 6,
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 2),
-                                  decoration: BoxDecoration(
-                                    color: _headerPhotoIndex == i
-                                        ? Colors.white
-                                        : Colors.white54,
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        // 写真枚数バッジ + 拡大ヒント（右上）
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.zoom_in,
-                                    size: 12, color: Colors.white),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${_headerPhotoIndex + 1}/${photos.length}',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  // 写真なし: 従来の地図表示にフォールバック
-                  if (facility.hasValidLocation) {
-                    return FlutterMap(
-                      options: MapOptions(
-                        initialCenter: ll.LatLng(
-                            facility.latitude, facility.longitude),
-                        initialZoom: AppConstants.detailZoom,
-                        interactionOptions: const InteractionOptions(
-                          flags: InteractiveFlag.none,
-                        ),
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.yumap.app',
-                        ),
-                        MarkerLayer(
-                          markers: [
-                            Marker(
-                              point: ll.LatLng(
-                                  facility.latitude, facility.longitude),
-                              width: 44,
-                              height: 44,
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF1565C0),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Center(
-                                  child: Text('♨️',
-                                      style: TextStyle(fontSize: 20)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  }
-
-                  return ColoredBox(
-                    color: Colors.grey.shade200,
-                    child: const Center(
-                      child: Icon(Icons.map_outlined,
-                          size: 80, color: Colors.grey),
-                    ),
-                  );
-                },
+              background: _FacilityHeaderBackground(
+                photos: photos,
+                controller: _headerPageController,
+                currentIndex: _headerPhotoIndex,
+                onPageChanged: (i) => setState(() => _headerPhotoIndex = i),
+                facility: facility,
               ),
             ),
             actions: [
@@ -637,30 +479,11 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           // ── Action buttons (login only) ────────────────────────────────
           if (isSignedIn)
             SliverToBoxAdapter(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    if (AppConfig.isReviewEnabled) ...[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.rate_review_outlined),
-                          label: const Text('レビューを書く'),
-                          onPressed: () => _showReviewSheet(facility),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.playlist_add_outlined),
-                        label: const Text('プランに追加'),
-                        onPressed: () => _showAddToPlanSheet(facility),
-                      ),
-                    ),
-                  ],
-                ),
+              child: _FacilityActionButtons(
+                onReview: AppConfig.isReviewEnabled
+                    ? () => _showReviewSheet(facility)
+                    : null,
+                onPlan: () => _showAddToPlanSheet(facility),
               ),
             ),
 
@@ -671,75 +494,17 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
 
           // ── オーナー専用: 施設情報編集ボタン（承認済みオーナーのみ表示）──
           SliverToBoxAdapter(
-            child: Consumer(
-              builder: (context, ref, _) {
-                final isOwnerAsync =
-                    ref.watch(isApprovedOwnerProvider(facility.id));
-                final isOwner = isOwnerAsync.valueOrNull ?? false;
-                if (!isOwner) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: FilledButton.icon(
-                    onPressed: () => _openOwnerFacilityEdit(facility),
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('施設情報を編集する'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                  ),
-                );
-              },
+            child: _OwnerEditButton(
+              facilityId: facility.id,
+              onEdit: () => _openOwnerFacilityEdit(facility),
             ),
           ),
 
           // ── 施設情報の改善（ログイン不要・常時表示）──────────────────────
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Divider(),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      '施設情報の改善に協力する',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      // 情報を報告する（ゲスト可）
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.flag_outlined, size: 17),
-                          label: const Text('情報を報告する'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.grey.shade700,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          onPressed: () => _openFacilityReport(facility),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      // オーナー登録（画面内でログインチェック）
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.business_outlined, size: 17),
-                          label: const Text('オーナー登録'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.grey.shade700,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          onPressed: () => _openOwnerRegistration(facility),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            child: _FacilityImproveSection(
+              onReport: () => _openFacilityReport(facility),
+              onOwner: () => _openOwnerRegistration(facility),
             ),
           ),
 
@@ -773,54 +538,10 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
             )
           else if (AppConfig.isReviewEnabled && _reviews.isEmpty)
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-                child: Column(
-                  children: [
-                    Icon(Icons.rate_review_outlined,
-                        size: 48, color: Colors.grey[400]),
-                    const SizedBox(height: 12),
-                    Text(
-                      'まだクチコミがありません',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'あなたが最初にクチコミを書いてみましょう！',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[500],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    if (isSignedIn)
-                      FilledButton.icon(
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: const Text('最初のクチコミを書く'),
-                        onPressed: () => _showReviewSheet(facility),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
-                        ),
-                      )
-                    else
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.login, size: 18),
-                        label: const Text('ログインしてクチコミを書く'),
-                        onPressed: () =>
-                            Navigator.of(context).pushNamed('/login'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
-                        ),
-                      ),
-                  ],
-                ),
+              child: _EmptyReviewView(
+                isSignedIn: isSignedIn,
+                onWrite: () => _showReviewSheet(facility),
+                onLogin: () => Navigator.of(context).pushNamed('/login'),
               ),
             )
           else if (AppConfig.isReviewEnabled)
@@ -897,27 +618,11 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           // ── 追加ロード中スピナー / 全件表示済みメッセージ ──────────────
           if (!_reviewInitialLoading)
             SliverToBoxAdapter(
-              child: _reviewLoadingMore
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : (!_reviewHasMore && _reviews.isNotEmpty)
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Center(
-                            child: Text(
-                              'すべてのレビューを表示しました（${_reviews.length}件）',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
+              child: _ReviewFooter(
+                loadingMore: _reviewLoadingMore,
+                hasMore: _reviewHasMore,
+                reviewCount: _reviews.length,
+              ),
             ),
 
           // ── Banner ad ──────────────────────────────────────────────────

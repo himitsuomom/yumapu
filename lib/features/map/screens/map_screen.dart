@@ -30,6 +30,8 @@ import 'package:yu_map/providers/location_provider.dart';
 import 'package:yu_map/providers/navigation_provider.dart';
 import 'package:yu_map/services/map_clustering_service.dart';
 
+part 'map_screen_sub_widgets.dart';
+
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
 
@@ -70,8 +72,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   static const _defaultCenter =
       LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
 
-  /// カメラが何m移動したら再検索するかの閾値（2km）
-  static const _reloadThresholdMeters = 2000.0;
+  /// カメラが何m移動したら再検索するかの閾値（1km）
+  /// 都市部では2kmでは粗すぎるため1kmに設定。小さくスクロールしても
+  /// 近隣施設を見逃さないようにする。
+  static const _reloadThresholdMeters = 1000.0;
 
   // ── ライフサイクル ────────────────────────────────────────────────────────
 
@@ -349,7 +353,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         uri,
         headers: {
           // Nominatim の利用規約: User-Agent の指定が必須
-          'User-Agent': 'YuMap/1.0 (com.yumap.app; contact: himitsu.ichifirst@gmail.com)',
+          'User-Agent': 'YuMap/1.0 (com.yumap.app)',
         },
       ).timeout(const Duration(seconds: 5));
 
@@ -459,34 +463,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       },
     );
 
-    final facilityState = ref.watch(mapFacilityListProvider);
-    final isLoading = facilityState is AsyncLoading;
     final params = ref.watch(mapSearchParamsProvider);
     final hasFilter = params.facilityTypeId != null ||
         params.amenityIds.isNotEmpty ||
         params.isOpenNow;
     // UX-V13-1: 現在地座標（null = 未取得 or 権限なし）
     final currentLoc = ref.watch(currentLocationProvider);
-
-    // 検索クエリがある場合に表示する × バッジ
-    final hasSearchQuery = params.searchQuery != null;
-
-    // Bug-V6-3修正: 検索が1回以上実行されていて、かつ結果が0件のとき空状態メッセージを表示する。
-    // facilityState.hasValue は AsyncData（空リスト含む）になったときに true になるため、
-    // 初回ロード前（AsyncLoading）には表示されない。
-    final showEmptyState = facilityState.hasValue &&
-        !isLoading &&
-        (facilityState.valueOrNull?.isEmpty ?? false) &&
-        params.latitude != null;
-
-    // フィルター or 検索クエリがある場合は件数バナーを表示する。
-    // 0件のときは emptyState で表示するのでここでは表示しない。
-    final facilityCount = facilityState.valueOrNull?.length ?? 0;
-    final showCountBanner = facilityState.hasValue &&
-        !isLoading &&
-        facilityCount > 0 &&
-        (hasFilter || hasSearchQuery) &&
-        params.latitude != null;
 
     return Scaffold(
       body: Stack(
@@ -546,154 +528,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ],
           ),
 
-          // ── 上部オーバーレイ（検索バー + フィルターバナー）────────────
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 12,
-            right: 12,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // ── 検索バー ──────────────────────────────────────────
-                Material(
-                  elevation: 4,
-                  borderRadius: BorderRadius.circular(28),
-                  shadowColor: Colors.black26,
-                  child: TextField(
-                    controller: _searchController,
-                    textInputAction: TextInputAction.search,
-                    onChanged: _onSearchChanged,
-                    onSubmitted: _onSearchSubmitted,
-                    decoration: InputDecoration(
-                      hintText: '施設名・エリアで検索',
-                      // ローディング中はスピナー、通常は虫眼鏡アイコン
-                      prefixIcon: isLoading
-                          ? const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            )
-                          : const Icon(Icons.search),
-                      // 入力中のみ × ボタンを表示する
-                      suffixIcon: hasSearchQuery
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              tooltip: '検索をクリア',
-                              onPressed: () {
-                                _searchDebounce?.cancel();
-                                _searchController.clear();
-                                ref
-                                    .read(
-                                        mapSearchParamsProvider.notifier)
-                                    .update(
-                                        (p) => p.copyWith(
-                                            clearText: true, page: 0));
-                              },
-                            )
-                          : null,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(28),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding:
-                          const EdgeInsets.symmetric(vertical: 0),
-                    ),
-                  ),
-                ),
-
-                // ── フィルター適用中バナー ─────────────────────────────
-                if (hasFilter) ...[
-                  const SizedBox(height: 6),
-                  Material(
-                    elevation: 2,
-                    borderRadius: BorderRadius.circular(20),
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 6),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.filter_list,
-                            size: 15,
-                            color:
-                                Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'フィルター適用中',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () {
-                              ref
-                                  .read(mapSearchParamsProvider
-                                      .notifier)
-                                  .update(
-                                    (p) => p.copyWith(
-                                      clearFacilityType: true,
-                                      amenityIds: [],
-                                      isOpenNow: false,
-                                    ),
-                                  );
-                            },
-                            child: Icon(
-                              Icons.close,
-                              size: 15,
-                              color:
-                                  Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          _MapSearchOverlay(
+            searchController: _searchController,
+            onSearchChanged: _onSearchChanged,
+            onSearchSubmitted: _onSearchSubmitted,
+            onClearSearch: () {
+              _searchDebounce?.cancel();
+              _searchController.clear();
+              ref
+                  .read(mapSearchParamsProvider.notifier)
+                  .update((p) => p.copyWith(clearText: true, page: 0));
+            },
           ),
 
-          // ── フィルター/検索ヒット件数バナー（中央上部）──────────────
-          // フィルターや検索クエリがある場合に「◯件見つかりました」を表示する。
-          // ユーザーが現在の条件で何件マッチしているかを直感的に把握できる。
-          if (showCountBanner)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 72 +
-                  (hasFilter ? 44 : 0), // 検索バー + フィルターバナーの高さ分下にずらす
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Material(
-                  elevation: 2,
-                  borderRadius: BorderRadius.circular(14),
-                  color: Colors.white.withAlpha(230),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 5),
-                    child: Text(
-                      '$facilityCount件見つかりました',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          const _MapCountBanner(),
 
           // ── 施設タイプ凡例カード（右下）──────────────────────────────
           // 初見ユーザーがマーカー色の意味を一目で分かるようにする。
@@ -717,57 +565,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
           ),
 
-          // ── Bug-V6-3: 検索結果0件の空状態オーバーレイ ─────────────────
-          if (showEmptyState)
-            Positioned(
-              bottom: 160,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(237), // 0.93 * 255 ≈ 237
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 8,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.search_off,
-                        size: 36,
-                        color: Color(0xFF9E9E9E),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        '施設が見つかりません',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        '検索条件を変えるか、別のエリアで試してください',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF757575),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          const _MapEmptyState(),
         ],
       ),
 
@@ -787,171 +585,3 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 }
 
-// ── 施設タイプ凡例カード ──────────────────────────────────────────────────────
-
-/// 地図右下に常時表示する小さい凡例カード。
-/// マーカー色（温泉=赤, 銭湯=青, サウナ=緑）をユーザーに示す。
-class _MapLegendCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      elevation: 3,
-      borderRadius: BorderRadius.circular(10),
-      color: Colors.white.withAlpha(230), // 90% 不透明
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            _LegendRow(color: Color(0xFFE53935), emoji: '♨', label: '温泉'),
-            SizedBox(height: 3),
-            _LegendRow(color: Color(0xFF1976D2), emoji: '🛁', label: '銭湯'),
-            SizedBox(height: 3),
-            _LegendRow(color: Color(0xFF2E7D32), emoji: '🧖', label: 'サウナ'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LegendRow extends StatelessWidget {
-  const _LegendRow({
-    required this.color,
-    required this.emoji,
-    required this.label,
-  });
-
-  final Color color;
-  final String emoji;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(emoji, style: const TextStyle(fontSize: 11)),
-        const SizedBox(width: 3),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-        ),
-      ],
-    );
-  }
-}
-
-// ── フィルターボトムシート ────────────────────────────────────────────────────
-
-class _FilterSheet extends ConsumerWidget {
-  const _FilterSheet();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final params = ref.watch(mapSearchParamsProvider);
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '絞り込み',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  if (params.facilityTypeId != null ||
-                      params.amenityIds.isNotEmpty ||
-                      params.isOpenNow)
-                    TextButton(
-                      onPressed: () {
-                        ref
-                            .read(mapSearchParamsProvider.notifier)
-                            .update(
-                              (p) => p.copyWith(
-                                clearFacilityType: true,
-                                amenityIds: [],
-                                isOpenNow: false,
-                              ),
-                            );
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text('リセット'),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            FilterBar(
-              selectedFacilityTypeId: params.facilityTypeId,
-              selectedAmenityIds: params.amenityIds,
-              isOpenNow: params.isOpenNow,
-              onFacilityTypeChanged: (typeId) {
-                ref.read(mapSearchParamsProvider.notifier).update(
-                  (p) => typeId == null
-                      ? p.copyWith(clearFacilityType: true, page: 0)
-                      : p.copyWith(facilityTypeId: typeId, page: 0),
-                );
-              },
-              onAmenityToggled: (amenityId) {
-                ref.read(mapSearchParamsProvider.notifier).update((p) {
-                  final current = List<String>.from(p.amenityIds);
-                  if (current.contains(amenityId)) {
-                    current.remove(amenityId);
-                  } else {
-                    current.add(amenityId);
-                  }
-                  return p.copyWith(amenityIds: current, page: 0);
-                });
-              },
-              onOpenNowChanged: (value) {
-                ref.read(mapSearchParamsProvider.notifier).update(
-                      (p) => p.copyWith(isOpenNow: value, page: 0),
-                    );
-              },
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('この条件で表示'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
