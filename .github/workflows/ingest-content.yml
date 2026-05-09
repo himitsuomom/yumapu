@@ -1,0 +1,42 @@
+name: Ingest — YouTube & RSS (6時間)
+
+on:
+  schedule:
+    # 毎日 0:00 / 6:00 / 12:00 / 18:00 JST（UTC-9h）
+    - cron: '0 3,9,15,21 * * *'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'youtube / rss / all'
+        default: 'all'
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: scripts/ingest/package.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: scripts/ingest
+
+      - name: Run YouTube ingest
+        run: npm run youtube
+        working-directory: scripts/ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Run RSS ingest
+        run: npm run rss
+        working-directory: scripts/ingest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

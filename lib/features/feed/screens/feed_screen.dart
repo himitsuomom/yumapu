@@ -19,6 +19,7 @@ import 'package:yu_map/providers/follow_provider.dart';
 import 'package:yu_map/providers/post_provider.dart';
 
 part 'feed_screen_sub_widgets.dart';
+part 'feed_screen_sections.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});

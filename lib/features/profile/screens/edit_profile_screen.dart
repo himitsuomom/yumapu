@@ -166,7 +166,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      _showError('更新に失敗しました: $e');
+      // PostgreSQLの一意制約違反（エラーコード23505）はユーザー名重複
+      final errorStr = e.toString();
+      if (errorStr.contains('23505') ||
+          errorStr.contains('unique') ||
+          errorStr.contains('duplicate')) {
+        _showError('このユーザー名はすでに使われています。別のユーザー名をお試しください。');
+      } else {
+        _showError('更新に失敗しました。もう一度お試しください。');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

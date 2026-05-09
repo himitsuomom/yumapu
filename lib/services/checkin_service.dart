@@ -152,6 +152,12 @@ abstract final class CheckinService {
         const SnackBar(content: Text('チェックインしました 🎉')),
       );
 
+      // Bug-52 修正: チェックイン後に統計・履歴プロバイダーを invalidate して
+      // プロフィール画面のチェックイン件数・履歴一覧を即座に更新する。
+      ref.invalidate(visitCountProvider);
+      ref.invalidate(visitListProvider);
+      ref.invalidate(visitAllProvider);
+
       // confetti を画面上から降り注ぐ演出として表示する。
       // ConfettiController をここで生成し、オーバーレイに乗せて再生後に dispose。
       _showCheckinConfetti(context);

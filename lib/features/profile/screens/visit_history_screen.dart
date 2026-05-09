@@ -136,18 +136,77 @@ class _VisitTile extends StatelessWidget {
   final Visit visit;
   final DateFormat dateFormat;
 
+  /// 施設タイプコードに対応するアイコンと色を返す（Feat-19対応）
+  /// サービス全体のカラーコードに合わせる（map_clustering_service.dart と同一）
+  ({IconData icon, Color color, String label}) _typeInfo(String? code) {
+    switch (code?.toLowerCase()) {
+      case 'onsen':
+        return (
+          icon: Icons.hot_tub,
+          color: const Color(0xFFE53935),
+          label: '温泉',
+        );
+      case 'sento':
+        return (
+          icon: Icons.bathtub_outlined,
+          color: const Color(0xFF1976D2),
+          label: '銭湯',
+        );
+      case 'sauna':
+        return (
+          icon: Icons.whatshot,
+          color: const Color(0xFF2E7D32),
+          label: 'サウナ',
+        );
+      default:
+        return (
+          icon: Icons.place_outlined,
+          color: const Color(0xFF7B1FA2),
+          label: 'その他',
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final facilityName = visit.facilityName ?? visit.facilityId;
+    final info = _typeInfo(visit.facilityTypeCode);
 
     return ListTile(
-      leading: const Icon(Icons.place_outlined, color: Color(0xFF1565C0)),
+      leading: CircleAvatar(
+        backgroundColor: info.color.withAlpha(26), // 10%透明度
+        child: Icon(info.icon, color: info.color, size: 20),
+      ),
       title: Text(
         facilityName,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(dateFormat.format(visit.visitedAt)),
+      subtitle: Row(
+        children: [
+          // 施設タイプラベル（Bug-51/Feat-19対応）
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: info.color.withAlpha(26),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              info.label,
+              style: TextStyle(
+                fontSize: 11,
+                color: info.color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            dateFormat.format(visit.visitedAt),
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
       trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
       onTap: () => Navigator.of(context).pushNamed(
         '/facility',

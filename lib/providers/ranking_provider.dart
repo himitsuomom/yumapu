@@ -2,6 +2,7 @@
 //
 // ランキング機能のデータ管理
 // user_rankings テーブルから取得し、users テーブルと JOIN して表示名・アバターを付加する
+// 期間フィルター: 累計=user_rankingsテーブル直接、今週/今月=get_period_rankings RPC
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/domain/entities/user_ranking.dart';
@@ -51,6 +52,21 @@ extension RankingSortByExtension on RankingSortBy {
     }
   }
 
+  /// ChoiceChip に表示する短いラベル（説明付き）。
+  /// 初見ユーザーが各ソート種別の意味をすぐに理解できるようにする。
+  String get shortLabel {
+    switch (this) {
+      case RankingSortBy.totalPoints:
+        return '合計PT（総合）';
+      case RankingSortBy.explorerPoints:
+        return '探索PT（訪問）';
+      case RankingSortBy.socialPoints:
+        return '社交PT（投稿）';
+      case RankingSortBy.visitCount:
+        return '訪問数';
+    }
+  }
+
   /// ランキング行のトレーリングに表示する値を RankedUser から取り出す
   String trailingValue(RankedUser u) {
     switch (this) {
@@ -75,6 +91,53 @@ extension RankingSortByExtension on RankingSortBy {
 /// 切り替えると即座にリストが再取得される。
 final rankingSortByProvider = StateProvider<RankingSortBy>(
   (ref) => RankingSortBy.totalPoints,
+);
+
+// ── ランキングの表示期間 ──────────────────────────────────────────────────────
+
+/// ランキング画面で現在選択されている表示期間の列挙型。
+///
+/// - [allTime] : 累計（全期間）。user_rankings テーブルの集計値を使う
+/// - [monthly] : 今月（過去30日）。get_period_rankings RPC で集計
+/// - [weekly]  : 今週（過去7日）。get_period_rankings RPC で集計
+enum RankingPeriod {
+  allTime,
+  monthly,
+  weekly,
+}
+
+extension RankingPeriodExtension on RankingPeriod {
+  /// UIに表示するラベル
+  String get label {
+    switch (this) {
+      case RankingPeriod.allTime:
+        return '累計';
+      case RankingPeriod.monthly:
+        return '今月';
+      case RankingPeriod.weekly:
+        return '今週';
+    }
+  }
+
+  /// RPC の p_days_ago パラメータ（累計は NULL = 全件）
+  int? get daysAgo {
+    switch (this) {
+      case RankingPeriod.allTime:
+        return null;
+      case RankingPeriod.monthly:
+        return 30;
+      case RankingPeriod.weekly:
+        return 7;
+    }
+  }
+
+  /// 累計かどうか（累計は user_rankings テーブルを使う）
+  bool get isAllTime => this == RankingPeriod.allTime;
+}
+
+/// ランキング画面で現在選択されている表示期間を保持するStateProvider
+final rankingPeriodProvider = StateProvider<RankingPeriod>(
+  (ref) => RankingPeriod.allTime,
 );
 
 // ── ランキング表示用モデル ─────────────────────────────────────────────────────
@@ -110,27 +173,73 @@ class RankedUser {
 
 // ── ランキングリストProvider ───────────────────────────────────────────────────
 
-/// トップ50ランキングリスト（rankingSortByProvider が示す列で降順ソート）
+/// トップ50ランキングリスト
 ///
-/// rankingSortByProvider の値が変わると自動で再取得される。
+/// - rankingSortByProvider  : ソート種別（合計PT / 探索PT / 社交PT / 訪問数）
+/// - rankingPeriodProvider  : 表示期間（累計 / 今月 / 今週）
+///
+/// どちらかが変わると自動で再取得される。
+/// 累計は user_rankings テーブル、今月/今週は get_period_rankings RPC を使用。
 final rankingListProvider =
     FutureProvider.autoDispose<List<RankedUser>>((ref) async {
-  // ソート種別を watch → 値が変わると自動リビルド
   final sortBy = ref.watch(rankingSortByProvider);
+  final period = ref.watch(rankingPeriodProvider);
   final client = ref.read(supabaseClientProvider);
   if (client == null) return [];
+
   try {
-    final data = await client
-        .from('user_rankings')
-        .select('*, users(display_name, username, avatar_url)')
-        .order(sortBy.column, ascending: false)
-        .limit(50);
-    return (data as List)
-        .map((e) => RankedUser.fromJson(e as Map<String, dynamic>))
-        .toList();
+    if (period.isAllTime) {
+      // ────────────────────────────────────────────────
+      // 累計: user_rankings テーブルをそのまま使う（高速）
+      // ────────────────────────────────────────────────
+      final data = await client
+          .from('user_rankings')
+          .select('*, users(display_name, username, avatar_url)')
+          .order(sortBy.column, ascending: false)
+          .limit(50);
+      return (data as List)
+          .map((e) => RankedUser.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } else {
+      // ────────────────────────────────────────────────
+      // 期間別: get_period_rankings RPC で visits/reviews を集計
+      // ────────────────────────────────────────────────
+      final data = await client.rpc(
+        'get_period_rankings',
+        params: {
+          'p_days_ago': period.daysAgo,
+          'p_sort_col': sortBy.column,
+          'p_limit': 50,
+        },
+      );
+      // BIGINT は Supabase REST では int として届く。
+      // 念のため文字列にも対応した安全パース関数を用意する。
+      int safeInt(dynamic v) =>
+          v == null ? 0 : (v is int ? v : int.tryParse(v.toString()) ?? 0);
+
+      final list = data as List;
+      return List<RankedUser>.generate(list.length, (index) {
+        final e = list[index] as Map<String, dynamic>;
+        return RankedUser(
+          ranking: UserRanking(
+            // 期間別ランキングには専用 row-ID がないため user_id を代用する
+            id: e['user_id'] as String,
+            userId: e['user_id'] as String,
+            explorerPoints: safeInt(e['explorer_points']),
+            visitCount: safeInt(e['visit_count']),
+            socialPoints: safeInt(e['social_points']),
+            reviewCount: safeInt(e['review_count']),
+            totalPoints: safeInt(e['total_points']),
+            currentTitle: e['current_title'] as String? ?? '湯めぐり初心者',
+            rankPosition: index + 1, // ソート済みインデックスを順位として使用
+          ),
+          displayName: e['display_name'] as String? ?? '湯めぐりユーザー',
+          avatarUrl: e['avatar_url'] as String?,
+        );
+      });
+    }
   } catch (e, st) {
     // エラーをリスロー → ランキング画面の error ケースでリトライUI が表示される
-    // 空リストを返すと「誰もいない」と誤認されるため、エラーとして伝播させる
     Error.throwWithStackTrace(e, st);
   }
 });

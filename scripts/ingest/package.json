@@ -1,0 +1,22 @@
+{
+  "name": "yumap-ingest",
+  "version": "1.0.0",
+  "description": "湯マップ情報収集スクリプト（Misskey/Mastodon/YouTube/RSS）",
+  "type": "module",
+  "scripts": {
+    "fediverse": "node --env-file=../../.env node_modules/.bin/tsx src/index.ts fediverse",
+    "youtube":   "node --env-file=../../.env node_modules/.bin/tsx src/index.ts youtube",
+    "rss":       "node --env-file=../../.env node_modules/.bin/tsx src/index.ts rss",
+    "all":       "node --env-file=../../.env node_modules/.bin/tsx src/index.ts all"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "dotenv": "^16.4.0",
+    "fast-xml-parser": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.10.0",
+    "typescript": "^5.4.0"
+  }
+}

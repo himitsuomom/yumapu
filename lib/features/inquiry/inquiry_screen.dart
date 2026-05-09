@@ -3,9 +3,15 @@
 // 問い合わせフォーム画面。
 // 「営業時間変更を報告」「未登録施設を追加申請」「バグ報告」「一般問い合わせ」に対応。
 // 送信先: Supabase の inquiries テーブル（誰でも送信可・ログイン不要）
+//
+// 修正履歴:
+//   UX-60: バグ報告時にOS・アプリバージョン情報を自動添付（package_info_plus 不要）
+
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
 /// 問い合わせ種別
@@ -131,6 +137,19 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
 
   // ── フォーム送信 ──────────────────────────────────────────────────────────
 
+  /// バグ報告時に自動添付する端末・アプリ情報を組み立てる（UX-60対応）。
+  ///
+  /// package_info_plus は使わず、dart:io の Platform と AppConstants.appVersion で
+  /// OS種別・バージョン・アプリバージョンを取得する。
+  String _buildDeviceInfo() {
+    final os = Platform.isIOS
+        ? 'iOS ${Platform.operatingSystemVersion}'
+        : Platform.isAndroid
+            ? 'Android ${Platform.operatingSystemVersion}'
+            : Platform.operatingSystem;
+    return '[端末情報]\nOS: $os\nアプリ: v${AppConstants.appVersion}\n\n';
+  }
+
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -147,10 +166,17 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
       // ログイン済みなら user_id も保存する（RLSで自分の問い合わせを閲覧できる）
       final userId = ref.read(sessionProvider)?.user.id;
 
+      // UX-60: バグ報告の場合は端末情報を本文の先頭に自動付与する。
+      // ユーザーが書いた内容をそのまま添付するため、改行でつなぐ。
+      final userMessage = _messageCtrl.text.trim();
+      final messageToSend = widget.type == InquiryType.bugReport
+          ? '${_buildDeviceInfo()}$userMessage'
+          : userMessage;
+
       await client.from('inquiries').insert({
         'type': _typeValue,
         'facility_name': _facilityNameCtrl.text.trim(),
-        'message': _messageCtrl.text.trim(),
+        'message': messageToSend,
         if (_contactCtrl.text.trim().isNotEmpty)
           'contact': _contactCtrl.text.trim(),
         if (userId != null) 'user_id': userId,
@@ -255,6 +281,27 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? '内容を入力してください' : null,
               ),
+              // UX-60: バグ報告の場合、端末情報が自動添付されることをユーザーに伝える。
+              if (widget.type == InquiryType.bugReport) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'OS・アプリバージョンが自動で添付されます',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 20),
 
               // 連絡先メール（任意）

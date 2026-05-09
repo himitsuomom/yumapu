@@ -75,6 +75,11 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
       await _client.auth.signInWithPassword(email: email, password: password);
       AnalyticsService.instance.logLogin();
       NotificationService.instance.registerToken().ignore();
+      // ログイン後に通知許可を遅延リクエスト。
+      // 起動直後ではなくログイン後に求めることで、ユーザーがアプリの価値を
+      // 理解した後に許可を求める（industry standard パターン）。
+      // 既に許可/拒否済みの場合は内部で何もしない。
+      NotificationService.instance.requestPermissionLazily().ignore();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
