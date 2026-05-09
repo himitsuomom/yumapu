@@ -13,7 +13,12 @@ class FacilityTypeOption {
 class AmenityOption {
   final String id;
   final String name;
-  const AmenityOption({required this.id, required this.name});
+  final String category;
+  const AmenityOption({
+    required this.id,
+    required this.name,
+    this.category = '',
+  });
 }
 
 /// 都道府県フィルター用のデータモデル。
@@ -77,6 +82,7 @@ final amenityOptionsProvider =
       .map((r) => AmenityOption(
             id: r['id'] as String,
             name: r['name_ja'] as String,
+            category: r['category'] as String? ?? '',
           ))
       .toList();
 });
@@ -85,16 +91,18 @@ final amenityOptionsProvider =
 
 /// Horizontal scrolling chip rows for facility type, "open now", and amenity filtering.
 ///
-/// Each amenity chip is independently toggleable: selecting or deselecting one
-/// does not affect the others (existing selections are preserved via
-/// [onAmenityToggled]).
+/// Amenity selection has two modes:
+/// - [onAmenityToggled] provided → inline scrollable chip row (map screen).
+/// - [onShowAmenityPicker] provided → single ActionChip that opens a bottom
+///   sheet (search screen). The count of selected amenities is shown as a badge.
 class FilterBar extends ConsumerWidget {
   const FilterBar({
     super.key,
     required this.selectedFacilityTypeId,
     required this.selectedAmenityIds,
     required this.onFacilityTypeChanged,
-    required this.onAmenityToggled,
+    this.onAmenityToggled,
+    this.onShowAmenityPicker,
     this.isOpenNow = false,
     this.onOpenNowChanged,
   });
@@ -105,9 +113,13 @@ class FilterBar extends ConsumerWidget {
   /// Called with the new facility type ID, or null to clear the filter.
   final void Function(String? id) onFacilityTypeChanged;
 
-  /// Called with the toggled amenity ID. The parent is responsible for
-  /// adding or removing it from the current selection list.
-  final void Function(String id) onAmenityToggled;
+  /// Inline chip mode: called with the toggled amenity ID.
+  /// Mutually exclusive with [onShowAmenityPicker].
+  final void Function(String id)? onAmenityToggled;
+
+  /// Bottom-sheet mode: called when the amenity ActionChip is pressed.
+  /// Mutually exclusive with [onAmenityToggled].
+  final VoidCallback? onShowAmenityPicker;
 
   /// 「今日営業中」フィルターが ON かどうか。
   final bool isOpenNow;
@@ -120,21 +132,19 @@ class FilterBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final typesAsync = ref.watch(facilityTypeOptionsProvider);
     final amenitiesAsync = ref.watch(amenityOptionsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasAmenities = selectedAmenityIds.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         // ── Facility type + "今日営業中" row ──────────────────────────────
-        // UX-V28-2: 「今日営業中」チップを施設タイプより先頭に配置。
-        // 以前は施設タイプ一覧の末尾に置かれていたため、スクロールしないと見えない
-        // 可能性があった。最も便利なフィルターを即座に使えるよう先頭に移動した。
         typesAsync.when(
           data: (types) {
             if (types.isEmpty) return const SizedBox.shrink();
             return _ChipRow(
               children: [
-                // ── 「今日営業中」チップ（先頭に配置して視認性向上）────────────
                 if (onOpenNowChanged != null)
                   FilterChip(
                     avatar: const Icon(Icons.access_time, size: 16),
@@ -142,7 +152,6 @@ class FilterBar extends ConsumerWidget {
                     selected: isOpenNow,
                     onSelected: onOpenNowChanged,
                   ),
-                // "すべて" chip clears the facility type filter
                 FilterChip(
                   label: const Text('すべて'),
                   selected: selectedFacilityTypeId == null,
@@ -160,24 +169,62 @@ class FilterBar extends ConsumerWidget {
           loading: () => const SizedBox.shrink(),
           error: (_, __) => const SizedBox.shrink(),
         ),
-        // ── Amenity row ────────────────────────────────────────────────────
-        amenitiesAsync.when(
-          data: (amenities) {
-            if (amenities.isEmpty) return const SizedBox.shrink();
-            return _ChipRow(
-              children: amenities
-                  .map((a) => FilterChip(
-                        label: Text(a.name),
-                        selected: selectedAmenityIds.contains(a.id),
-                        // Toggle only this amenity; others are unaffected
-                        onSelected: (_) => onAmenityToggled(a.id),
-                      ))
-                  .toList(),
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
-        ),
+        // ── Amenity section ────────────────────────────────────────────────
+        // Bottom-sheet mode: single ActionChip that opens a picker.
+        if (onShowAmenityPicker != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: SizedBox(
+              height: 40,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ActionChip(
+                  avatar: Icon(
+                    Icons.spa_outlined,
+                    size: 14,
+                    color: hasAmenities
+                        ? colorScheme.onPrimary
+                        : colorScheme.primary,
+                  ),
+                  label: Text(
+                    hasAmenities
+                        ? '設備・泉質 (${selectedAmenityIds.length})'
+                        : '設備・泉質で絞り込む',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: hasAmenities
+                          ? colorScheme.onPrimary
+                          : colorScheme.onSurface,
+                    ),
+                  ),
+                  backgroundColor: hasAmenities
+                      ? colorScheme.primary
+                      : colorScheme.surfaceContainerHighest,
+                  onPressed: onShowAmenityPicker,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          )
+        // Inline chip mode: scrollable chip row (existing behavior).
+        else if (onAmenityToggled != null)
+          amenitiesAsync.when(
+            data: (amenities) {
+              if (amenities.isEmpty) return const SizedBox.shrink();
+              return _ChipRow(
+                children: amenities
+                    .map((a) => FilterChip(
+                          label: Text(a.name),
+                          selected: selectedAmenityIds.contains(a.id),
+                          onSelected: (_) => onAmenityToggled!(a.id),
+                        ))
+                    .toList(),
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
       ],
     );
   }

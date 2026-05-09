@@ -115,7 +115,7 @@ class _TrendingCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 // 施設名（最大2行）
                 Text(
-                  facility.name,
+                  facility.displayName,
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -238,9 +238,570 @@ class _PrefectureFilterChip extends ConsumerWidget {
   }
 }
 
+// ── 都道府県ピッカーボトムシート ──────────────────────────────────────────────────
+
+/// 都道府県一覧をボトムシートで表示する。
+/// 「全国」(null) + 47都道府県を地域別に区切り線を入れて表示する。
+class _PrefecturePickerSheet extends ConsumerWidget {
+  const _PrefecturePickerSheet({
+    required this.currentPrefectureId,
+    required this.onSelected,
+  });
+
+  final String? currentPrefectureId;
+
+  /// 都道府県IDを引数として呼ばれる。null は「全国」を意味する。
+  final void Function(String? id) onSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefecturesAsync = ref.watch(prefectureOptionsProvider);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (ctx, scrollController) {
+        return Column(
+          children: [
+            // ── ドラッグハンドル ────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // ── タイトル ────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  Text(
+                    '都道府県を選ぶ',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // ── 都道府県リスト ─────────────────────────────────────────────
+            Expanded(
+              child: prefecturesAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('読み込みエラー: $e')),
+                data: (prefectures) {
+                  // 「全国」オプション + 47都道府県を地域でグループ分けして表示する。
+                  // 地域の順番: 北海道→東北→関東→中部→近畿→中国→四国→九州・沖縄
+                  final regions = <String>[
+                    '北海道', '東北', '関東', '中部', '近畿', '中国', '四国', '九州・沖縄',
+                  ];
+
+                  // 地域別にグループ化する
+                  final byRegion = <String, List<PrefectureOption>>{};
+                  final noRegion = <PrefectureOption>[];
+                  for (final p in prefectures) {
+                    if (p.region != null && regions.contains(p.region)) {
+                      byRegion.putIfAbsent(p.region!, () => []).add(p);
+                    } else {
+                      noRegion.add(p);
+                    }
+                  }
+
+                  // 表示するアイテムリスト（ヘッダーと施設をフラットにまとめる）
+                  final items = <_ListItem>[];
+
+                  // 「全国」行（フィルターをクリアする）
+                  items.add(const _PrefectureItem(null, '全国（絞り込みなし）'));
+
+                  // 地域別グループを順番通りに追加する
+                  for (final region in regions) {
+                    final group = byRegion[region];
+                    if (group == null || group.isEmpty) continue;
+                    items.add(_RegionHeader(region));
+                    for (final p in group) {
+                      items.add(_PrefectureItem(p.id, p.name));
+                    }
+                  }
+
+                  // 地域未設定の都道府県（DBデータが不完全な場合の安全網）
+                  if (noRegion.isNotEmpty) {
+                    items.add(const _RegionHeader('その他'));
+                    for (final p in noRegion) {
+                      items.add(_PrefectureItem(p.id, p.name));
+                    }
+                  }
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    itemCount: items.length,
+                    itemBuilder: (_, i) {
+                      final item = items[i];
+                      if (item is _RegionHeader) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                          child: Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        );
+                      }
+                      final prefItem = item as _PrefectureItem;
+                      final isSelected = prefItem.id == currentPrefectureId ||
+                          (prefItem.id == null && currentPrefectureId == null);
+                      return ListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 20),
+                        title: Text(
+                          prefItem.label,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(
+                                Icons.check,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.primary,
+                              )
+                            : null,
+                        onTap: () => onSelected(prefItem.id),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── ピッカー内部用の sealed リスト項目 ────────────────────────────────────────
+
+/// ピッカーリストのアイテム基底クラス（ヘッダー or 都道府県行）
+sealed class _ListItem {
+  const _ListItem();
+}
+
+class _RegionHeader extends _ListItem {
+  final String label;
+  const _RegionHeader(this.label);
+}
+
+class _PrefectureItem extends _ListItem {
+  final String? id; // null = 「全国」
+  final String label;
+  const _PrefectureItem(this.id, this.label);
+}
+
+// ── アメニティ選択ボトムシート ─────────────────────────────────────────────────
+
+/// アメニティをカテゴリ別に表示し、チェックボックスで複数選択できるボトムシート。
+/// 選択結果は「適用」ボタンで [onChanged] に渡される。
+class _AmenityPickerSheet extends ConsumerStatefulWidget {
+  const _AmenityPickerSheet({
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  final List<String> selectedIds;
+  final void Function(List<String> ids) onChanged;
+
+  @override
+  ConsumerState<_AmenityPickerSheet> createState() =>
+      _AmenityPickerSheetState();
+}
+
+class _AmenityPickerSheetState extends ConsumerState<_AmenityPickerSheet> {
+  late List<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List<String>.from(widget.selectedIds);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final amenitiesAsync = ref.watch(amenityOptionsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (ctx, scrollController) {
+        return Column(
+          children: [
+            // ── ドラッグハンドル ────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // ── ヘッダー ────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 12),
+              child: Row(
+                children: [
+                  Text(
+                    '設備・泉質で絞り込む',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  if (_selected.isNotEmpty)
+                    TextButton(
+                      onPressed: () => setState(() => _selected = []),
+                      child: const Text('リセット'),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // ── アメニティリスト（カテゴリ別）─────────────────────────────
+            Expanded(
+              child: amenitiesAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) =>
+                    Center(child: Text('読み込みエラー: $e')),
+                data: (amenities) {
+                  if (amenities.isEmpty) {
+                    return const Center(child: Text('設備データがありません'));
+                  }
+
+                  // カテゴリ別にグループ化
+                  final grouped = <String, List<AmenityOption>>{};
+                  for (final a in amenities) {
+                    final cat = a.category.isEmpty ? 'その他' : a.category;
+                    grouped.putIfAbsent(cat, () => []).add(a);
+                  }
+
+                  // ヘッダーと行をフラットリストに展開
+                  final items = <_AmenityListItem>[];
+                  for (final entry in grouped.entries) {
+                    items.add(_AmenityCategoryHeader(entry.key));
+                    for (final a in entry.value) {
+                      items.add(_AmenityRowItem(a));
+                    }
+                  }
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    itemCount: items.length,
+                    itemBuilder: (_, i) {
+                      final item = items[i];
+                      if (item is _AmenityCategoryHeader) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                          child: Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        );
+                      }
+                      final row = item as _AmenityRowItem;
+                      final isChecked = _selected.contains(row.amenity.id);
+                      return CheckboxListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 20),
+                        title: Text(
+                          row.amenity.name,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        value: isChecked,
+                        onChanged: (v) {
+                          setState(() {
+                            if (v == true) {
+                              _selected.add(row.amenity.id);
+                            } else {
+                              _selected.remove(row.amenity.id);
+                            }
+                          });
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            // ── 適用ボタン ──────────────────────────────────────────────────
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => widget.onChanged(_selected),
+                    child: Text(
+                      _selected.isEmpty
+                          ? '絞り込まずに適用'
+                          : '${_selected.length}件の設備で絞り込む',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+sealed class _AmenityListItem {
+  const _AmenityListItem();
+}
+
+class _AmenityCategoryHeader extends _AmenityListItem {
+  final String label;
+  const _AmenityCategoryHeader(this.label);
+}
+
+class _AmenityRowItem extends _AmenityListItem {
+  final AmenityOption amenity;
+  const _AmenityRowItem(this.amenity);
+}
+
+// ── 距離フィルター行 ────────────────────────────────────────────────────────────
+
+/// 現在地からの距離で施設を絞り込むチップ行。
+/// 現在地が未取得（currentLocationProvider == null）の場合はヒントを表示する。
+class _DistanceFilterRow extends ConsumerWidget {
+  const _DistanceFilterRow({
+    required this.selectedRadiusMeters,
+    required this.onDistanceChanged,
+  });
+
+  final double? selectedRadiusMeters;
+  final void Function(double? radiusMeters) onDistanceChanged;
+
+  static const _options = [
+    (label: '1km', meters: 1000.0),
+    (label: '3km', meters: 3000.0),
+    (label: '5km', meters: 5000.0),
+    (label: '10km', meters: 10000.0),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final location = ref.watch(currentLocationProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        children: [
+          const Icon(Icons.near_me_outlined, size: 16, color: Colors.grey),
+          const SizedBox(width: 6),
+          const Text(
+            '距離:',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(width: 8),
+          if (location == null)
+            Expanded(
+              child: Text(
+                '地図タブを開くと距離で絞り込めます',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            )
+          else
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _SortChip(
+                      label: '全国',
+                      selected: selectedRadiusMeters == null,
+                      onSelected: (_) => onDistanceChanged(null),
+                    ),
+                    ..._options.map(
+                      (o) => Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: _SortChip(
+                          label: o.label,
+                          selected: selectedRadiusMeters == o.meters,
+                          onSelected: (_) => onDistanceChanged(o.meters),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── ソートチップ ──────────────────────────────────────────────────────────────
+
+/// 選択可能な小さなチップ。ChoiceChipをコンパクトにラップする。
+class _SortChip extends StatelessWidget {
+  const _SortChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final void Function(bool) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
+        ),
+      ),
+      selected: selected,
+      onSelected: onSelected,
+      selectedColor: colorScheme.primary,
+      backgroundColor: colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+// ── 検索リスト用ポップアップメニュー ──────────────────────────────────────────
+
+/// 検索結果タイルの「⋮」ポップアップメニュー。
+/// 「地図で見る」「お気に入りに追加/解除」「詳細を見る」の3項目を提供する。
+/// ConsumerWidget にすることで isFavoriteProvider を watch できる。
+class _FacilityPopupMenu extends ConsumerWidget {
+  const _FacilityPopupMenu({required this.facility});
+
+  final Facility facility;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFavorite = ref.watch(isFavoriteProvider(facility.id));
+
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, color: Colors.grey, size: 20),
+      tooltip: 'メニュー',
+      onSelected: (value) async {
+        switch (value) {
+          case 'show_on_map':
+            ref.read(mapFlyToProvider.notifier).state = (
+              lat: facility.latitude,
+              lng: facility.longitude,
+            );
+            ref.read(homeTabIndexProvider.notifier).state = 0;
+          case 'toggle_favorite':
+            await ref
+                .read(favoritesProvider.notifier)
+                .toggle(facility.id);
+            if (!context.mounted) return;
+            final now = ref.read(isFavoriteProvider(facility.id));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(now ? 'お気に入りに追加しました' : 'お気に入りを解除しました'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          case 'open_detail':
+            Navigator.of(context).pushNamed(
+              '/facility',
+              arguments: facility.id,
+            );
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'show_on_map',
+          child: Row(
+            children: [
+              Icon(Icons.map_outlined, size: 18),
+              SizedBox(width: 8),
+              Text('地図で見る'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'toggle_favorite',
+          child: Row(
+            children: [
+              Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                size: 18,
+                color: isFavorite ? Colors.red : null,
+              ),
+              const SizedBox(width: 8),
+              Text(isFavorite ? 'お気に入りを解除' : 'お気に入りに追加'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'open_detail',
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 18),
+              SizedBox(width: 8),
+              Text('詳細を見る'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ── 検索履歴パネル ────────────────────────────────────────────────────────────
 
 /// 検索バーにフォーカスが当たり、テキストが空のときに表示する検索履歴リスト。
+///
+/// 最大5件の直近検索ワードを表示し、タップで再検索・×ボタンで削除できる。
+/// Material の Card + ListTile で実装し、検索フィールドの直下に自然に溶け込む。
 class _RecentSearchesPanel extends StatelessWidget {
   const _RecentSearchesPanel({
     required this.searches,
@@ -248,8 +809,13 @@ class _RecentSearchesPanel extends StatelessWidget {
     required this.onRemove,
   });
 
+  /// 表示する検索履歴（最大5件、最新順）
   final List<String> searches;
+
+  /// 履歴キーワードをタップしたときのコールバック
   final void Function(String query) onTap;
+
+  /// 特定の履歴を削除するコールバック
   final void Function(String query) onRemove;
 
   @override
@@ -266,12 +832,16 @@ class _RecentSearchesPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ヘッダー
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
             child: Row(
               children: [
-                Icon(Icons.history, size: 14,
-                    color: colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.history,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   '最近の検索',
@@ -285,14 +855,17 @@ class _RecentSearchesPanel extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
+          // 検索履歴リスト
           ...searches.map(
             (q) => ListTile(
               dense: true,
               leading: const Icon(Icons.search, size: 18),
-              title: Text(q,
-                  style: const TextStyle(fontSize: 14),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+              title: Text(
+                q,
+                style: const TextStyle(fontSize: 14),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               trailing: IconButton(
                 icon: const Icon(Icons.close, size: 16),
                 tooltip: '削除',
@@ -306,4 +879,3 @@ class _RecentSearchesPanel extends StatelessWidget {
     );
   }
 }
-

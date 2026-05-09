@@ -98,6 +98,10 @@ class Facility extends Equatable {
   /// Always check this before placing a map marker.
   bool get hasValidLocation => latitude != 0.0 || longitude != 0.0;
 
+  /// OSM の施設名は "草津温泉;Kusatsu Onsen" のように ; 区切りで複数言語が入ることがある。
+  /// 表示用には先頭の名前だけを使う。DB への書き込みや検索では生の name を保持する。
+  String get displayName => name.split(';').first.trim();
+
   /// facility_types.code を日本語表示名に変換する。
   /// DB の code は英語（'onsen', 'public_bath', 'sauna'）なので
   /// ユーザー向けには日本語名を使う。

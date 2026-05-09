@@ -223,7 +223,7 @@ class _FacilitySearchDialogState extends State<_FacilitySearchDialog> {
         final facility = _results[index];
         return ListTile(
           leading: const Icon(Icons.hot_tub_outlined),
-          title: Text(facility.name),
+          title: Text(facility.displayName),
           subtitle: facility.address != null
               ? Text(
                   facility.address!,
@@ -413,7 +413,7 @@ class _RecentFacilitiesList extends StatelessWidget {
             final facility = facilities[index];
             return ListTile(
               leading: const Icon(Icons.hot_tub_outlined),
-              title: Text(facility.name),
+              title: Text(facility.displayName),
               subtitle: facility.address != null
                   ? Text(
                       facility.address!,

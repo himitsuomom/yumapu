@@ -323,7 +323,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content:
-                                Text('${facility.name}をお気に入りから削除しました'),
+                                Text('${facility.displayName}をお気に入りから削除しました'),
                             action: SnackBarAction(
                               label: '元に戻す',
                               onPressed: () => ref
@@ -370,7 +370,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                        '${facility.name}をお気に入りから削除しました'),
+                                        '${facility.displayName}をお気に入りから削除しました'),
                                     action: SnackBarAction(
                                       label: '元に戻す',
                                       onPressed: () => ref
