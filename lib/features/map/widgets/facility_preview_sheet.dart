@@ -132,7 +132,7 @@ class _FacilityPreviewSheetState
             ),
             const SizedBox(height: 12),
             Text(
-              widget.facility.name,
+              widget.facility.displayName,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
@@ -209,7 +209,7 @@ class _FacilityPreviewSheetState
   void _shareFacility() {
     final facility = widget.facility;
     final url = '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
-    Share.share('${facility.name}\n$url', subject: '湯マップ — ${facility.name}');
+    Share.share('${facility.displayName}\n$url', subject: '湯マップ — ${facility.displayName}');
   }
 
   // ── チェックイン ───────────────────────────────────────────────────────────

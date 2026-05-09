@@ -60,7 +60,11 @@ class FacilityService {
       if (searchQuery != null && searchQuery.trim().isNotEmpty) {
         final q = searchQuery.trim().toLowerCase();
         results = results.where((f) {
-          final nameMatch = f.name.toLowerCase().contains(q);
+          // displayName（;区切り前の表示名）と生の name 両方を検索対象にする。
+          // これにより「草津温泉」で検索したとき、name が "草津温泉;Kusatsu Onsen"
+          // の施設も正しくマッチする。
+          final nameMatch = f.displayName.toLowerCase().contains(q) ||
+              f.name.toLowerCase().contains(q);
           final addressMatch = (f.address ?? '').toLowerCase().contains(q);
           return nameMatch || addressMatch;
         }).toList();

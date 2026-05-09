@@ -13,11 +13,10 @@ import 'package:yu_map/features/search/widgets/facility_list_tile.dart';
 import 'package:yu_map/features/search/widgets/filter_bar.dart';
 import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
-import 'package:yu_map/providers/navigation_provider.dart';
 import 'package:yu_map/providers/location_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 
 part 'search_screen_sub_widgets.dart';
-part 'search_screen_sections.dart';
 // FacilitySortBy は facility_provider.dart 経由でエクスポートされているため
 // facility_service.dart を直接インポートする必要はない
 
@@ -68,9 +67,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // ── Filter helpers ────────────────────────────────────────────────────────
 
   /// フィルター条件（page除く）を文字列キーにする。
-  /// 検索ワード・種別・アメニティ・ソート・営業中フラグ・都道府県が変わったら変わる。
+  /// 検索ワード・種別・アメニティ・ソート・営業中フラグ・都道府県・半径が変わったら変わる。
   String _filterKey(FacilitySearchParams p) =>
-      '${p.searchQuery}|${p.facilityTypeId}|${p.amenityIds.join(",")}|${p.sortBy}|${p.isOpenNow}|${p.prefectureId}';
+      '${p.searchQuery}|${p.facilityTypeId}|${p.amenityIds.join(",")}|${p.sortBy}|${p.isOpenNow}|${p.prefectureId}|${p.radiusMeters}';
 
   /// テキスト入力中にリアルタイムで呼ばれる。400ms のdebounce後に検索する。
   /// debounce = ユーザーが入力を止めてから少し待って検索することで、
@@ -147,18 +146,50 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// Toggles [amenityId] in the selection while preserving all other
-  /// selected amenity IDs.
-  void _onAmenityToggled(String amenityId) {
-    ref.read(facilitySearchParamsProvider.notifier).update((p) {
-      final current = List<String>.from(p.amenityIds);
-      if (current.contains(amenityId)) {
-        current.remove(amenityId);
-      } else {
-        current.add(amenityId);
-      }
-      return p.copyWith(amenityIds: current, page: 0);
-    });
+  /// アメニティ選択結果（ボトムシート経由）を一括で適用する。
+  void _onAmenitiesChanged(List<String> ids) {
+    ref.read(facilitySearchParamsProvider.notifier).update(
+          (p) => p.copyWith(amenityIds: ids, page: 0),
+        );
+  }
+
+  /// アメニティ選択ボトムシートを表示する。
+  Future<void> _showAmenityPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => _AmenityPickerSheet(
+        selectedIds: ref.read(facilitySearchParamsProvider).amenityIds,
+        onChanged: (ids) {
+          Navigator.of(ctx).pop();
+          _onAmenitiesChanged(ids);
+        },
+      ),
+    );
+  }
+
+  /// 距離フィルターを変更する。
+  /// [radiusMeters] が null のとき「全国」（地理フィルターなし）に戻す。
+  void _onDistanceChanged(double? radiusMeters) {
+    if (radiusMeters == null) {
+      ref.read(facilitySearchParamsProvider.notifier).update(
+            (p) => p.copyWith(clearGeo: true, page: 0),
+          );
+    } else {
+      final location = ref.read(currentLocationProvider);
+      if (location == null) return;
+      ref.read(facilitySearchParamsProvider.notifier).update(
+            (p) => p.copyWith(
+              latitude: location.lat,
+              longitude: location.lng,
+              radiusMeters: radiusMeters,
+              page: 0,
+            ),
+          );
+    }
   }
 
   /// UX-V9-4対応: ソート順を変更する。
@@ -223,16 +254,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final params = ref.watch(facilitySearchParamsProvider);
     final facilityAsync = ref.watch(facilityListProvider);
-    // 距離順ソートのためにcurrentLocationProviderをwatch。
-    // nullなら位置情報未取得（権限なし or MapScreen未起動）。
-    final currentLocation = ref.watch(currentLocationProvider);
-    final hasLocation = currentLocation != null;
     final hasActiveFilters = params.searchQuery != null ||
         params.facilityTypeId != null ||
         params.amenityIds.isNotEmpty ||
         params.sortBy != FacilitySortBy.qualityScore ||
         params.isOpenNow ||
-        params.prefectureId != null;
+        params.prefectureId != null ||
+        params.radiusMeters != null;
 
     // フィルター条件が変わったら蓄積リストをリセットする。
     // ページ番号変更だけなら蓄積リストに追記する（「もっと見る」）。
@@ -347,7 +375,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             selectedFacilityTypeId: params.facilityTypeId,
             selectedAmenityIds: params.amenityIds,
             onFacilityTypeChanged: _onFacilityTypeChanged,
-            onAmenityToggled: _onAmenityToggled,
+            onShowAmenityPicker: _showAmenityPicker,
             isOpenNow: params.isOpenNow,
             onOpenNowChanged: _onOpenNowChanged,
           ),
@@ -359,29 +387,188 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onTap: () => _showPrefecturePicker(params.prefectureId),
             onClear: () => _onPrefectureChanged(null),
           ),
-          _SortSection(
-            params: params,
-            hasLocation: hasLocation,
-            onSortChanged: _onSortChanged,
+          // ── Distance filter chips ─────────────────────────────────────
+          _DistanceFilterRow(
+            selectedRadiusMeters: params.radiusMeters,
+            onDistanceChanged: _onDistanceChanged,
+          ),
+          // ── Sort chips（UX-V9-4 + UX-V11-1対応）──────────────────────
+          // 検索結果の並び順を「品質順」「名前順」「距離順」から選べる。
+          // ChoiceChip = ラジオボタンのような択一選択UI。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Icon(Icons.sort, size: 16, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  const Text(
+                    '並び順:',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(width: 8),
+                  _SortChip(
+                    label: '品質順',
+                    selected: params.sortBy == FacilitySortBy.qualityScore,
+                    onSelected: (_) => _onSortChanged(FacilitySortBy.qualityScore),
+                  ),
+                  const SizedBox(width: 6),
+                  _SortChip(
+                    label: '名前順',
+                    selected: params.sortBy == FacilitySortBy.name,
+                    onSelected: (_) => _onSortChanged(FacilitySortBy.name),
+                  ),
+                  const SizedBox(width: 6),
+                  _SortChip(
+                    label: '距離順',
+                    selected: params.sortBy == FacilitySortBy.distance,
+                    onSelected: (_) => _onSortChanged(FacilitySortBy.distance),
+                  ),
+                ],
+              ),
+            ),
           ),
           const Divider(height: 1),
+          // ── Result list ──────────────────────────────────────────────────
           Expanded(
-            child: _FacilityResultList(
-              facilityAsync: facilityAsync,
-              hasActiveFilters: hasActiveFilters,
-              showTrending: !hasActiveFilters && params.page == 0,
-              accumulatedFacilities: _accumulatedFacilities,
-              hasMore: _hasMore,
-              isLoadingMore: _isLoadingMore,
-              onClearFilters: _clearFilters,
-              onLoadMore: _loadMore,
-              onRefresh: _onRefresh,
-              onRetry: () => ref.invalidate(facilityListProvider),
+            child: _buildResultList(
+              context,
+              facilityAsync,
+              hasActiveFilters,
+              params,
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildResultList(
+    BuildContext context,
+    AsyncValue<List<Facility>> facilityAsync,
+    bool hasActiveFilters,
+    FacilitySearchParams params,
+  ) {
+    // 初回ロード中（蓄積リストが空）はローディングを表示する。
+    // 「もっと見る」の2ページ目以降は蓄積リストを表示しながら下にスピナーを出す。
+    if (facilityAsync.isLoading && _accumulatedFacilities.isEmpty) {
+      return const LoadingWidget();
+    }
+
+    if (facilityAsync.hasError && _accumulatedFacilities.isEmpty) {
+      return AppErrorWidget(
+        message: facilityAsync.error.toString(),
+        onRetry: () => ref.invalidate(facilityListProvider),
+      );
+    }
+
+    if (_accumulatedFacilities.isEmpty) {
+      return EmptyWidget(
+        icon: Icons.search_off,
+        message: '施設が見つかりませんでした',
+        action: hasActiveFilters
+            ? TextButton(
+                onPressed: _clearFilters,
+                child: const Text('フィルターをクリア'),
+              )
+            : null,
+      );
+    }
+
+    // フィルターなし（検索語・種別・その他）の場合はリスト先頭に「今週の人気」を表示
+    final showTrending = !hasActiveFilters && params.page == 0;
+
+    // UX-V25-1: 引っ張って更新（プルリフレッシュ）対応。
+    // ListView の件数が少ないときでも引っ張れるよう AlwaysScrollableScrollPhysics を指定。
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      // showTrending の場合はインデックス0に人気施設ウィジェットを挿入
+      itemCount: _accumulatedFacilities.length + (showTrending ? 2 : 1),
+      itemBuilder: (context, i) {
+        // フィルターなし時: index 0 = 人気施設セクション
+        if (showTrending && i == 0) {
+          return _TrendingFacilitiesSection(
+            onFacilityTap: (facilityId) =>
+                Navigator.of(context).pushNamed('/facility', arguments: facilityId),
+          );
+        }
+
+        // showTrending の場合はインデックスを 1 ずらす
+        final listIndex = showTrending ? i - 1 : i;
+
+        // 最終アイテム: 「もっと見る」ボタン or ローディング
+        if (listIndex == _accumulatedFacilities.length) {
+          return _buildFooter(facilityAsync.isLoading);
+        }
+        final facility = _accumulatedFacilities[listIndex];
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: FacilityListTile(
+                    facility: facility,
+                    onTap: () => Navigator.of(context).pushNamed(
+                      '/facility',
+                      arguments: facility.id,
+                    ),
+                  ),
+                ),
+                // 地図で見る / お気に入り / 詳細を見る のポップアップメニュー
+                _FacilityPopupMenu(facility: facility),
+              ],
+            ),
+            const Divider(height: 1),
+          ],
+        );
+      },
+      ),
+    );
+  }
+
+  /// リスト末尾に表示するフッター。
+  /// - ロード中: スピナー
+  /// - まだある: 「もっと見る」ボタン
+  /// - 全件表示済み: 空白
+  Widget _buildFooter(bool isLoading) {
+    if (isLoading && _isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_hasMore) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: OutlinedButton.icon(
+            onPressed: _loadMore,
+            icon: const Icon(Icons.expand_more, size: 18),
+            label: Text(
+              'もっと見る（${_accumulatedFacilities.length}件表示中）',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ),
+      );
+    }
+    // 全件表示済み
+    if (_accumulatedFacilities.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Text(
+            '${_accumulatedFacilities.length}件をすべて表示しました',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   @override

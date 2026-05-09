@@ -188,8 +188,8 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
 
   void _shareFacility(Facility facility) {
     final url = '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
-    final text = '${facility.name}\n$url';
-    Share.share(text, subject: '湯マップ — ${facility.name}');
+    final text = '${facility.displayName}\n$url';
+    Share.share(text, subject: '湯マップ — ${facility.displayName}');
   }
 
   // ── 地図タブへ遷移 ────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       '/facility-report',
       arguments: {
         'facilityId': facility.id,
-        'facilityName': facility.name,
+        'facilityName': facility.displayName,
       },
     );
   }
@@ -243,7 +243,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       '/owner-registration',
       arguments: {
         'facilityId': facility.id,
-        'facilityName': facility.name,
+        'facilityName': facility.displayName,
       },
     );
   }
@@ -302,7 +302,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
           _analyticsLogged = true;
           AnalyticsService.instance.logFacilityView(
             facilityId: facility.id,
-            facilityName: facility.name,
+            facilityName: facility.displayName,
           );
         }
       });

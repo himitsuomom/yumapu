@@ -35,7 +35,7 @@ class FacilityListTile extends ConsumerWidget {
       onTap: onTap,
       leading: _FacilityTypeIcon(facilityType: facility.facilityType),
       title: Text(
-        facility.name,
+        facility.displayName,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

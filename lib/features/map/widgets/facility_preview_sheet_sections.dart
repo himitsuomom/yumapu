@@ -123,7 +123,7 @@ class _FacilityInfoCard extends ConsumerWidget {
                       ),
                     ),
                   Text(
-                    facility.name,
+                    facility.displayName,
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -235,7 +235,7 @@ class _FacilityInfoCard extends ConsumerWidget {
                       context,
                       facility.latitude,
                       facility.longitude,
-                      name: facility.name,
+                      name: facility.displayName,
                     ),
                   ),
                 ),
