@@ -4,10 +4,10 @@
   "description": "湯マップ情報収集スクリプト（Misskey/Mastodon/YouTube/RSS）",
   "type": "module",
   "scripts": {
-    "fediverse": "node --env-file=../../.env node_modules/.bin/tsx src/index.ts fediverse",
-    "youtube":   "node --env-file=../../.env node_modules/.bin/tsx src/index.ts youtube",
-    "rss":       "node --env-file=../../.env node_modules/.bin/tsx src/index.ts rss",
-    "all":       "node --env-file=../../.env node_modules/.bin/tsx src/index.ts all"
+    "fediverse": "node node_modules/.bin/tsx src/index.ts fediverse",
+    "youtube":   "node node_modules/.bin/tsx src/index.ts youtube",
+    "rss":       "node node_modules/.bin/tsx src/index.ts rss",
+    "all":       "node node_modules/.bin/tsx src/index.ts all"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
