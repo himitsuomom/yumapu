@@ -104,14 +104,14 @@ class AppTheme {
         brightness: Brightness.dark,
         colorSchemeSeed: primary,
         scaffoldBackgroundColor: darkBackground,
-        appBarTheme: AppBarTheme(
+        appBarTheme: const AppBarTheme(
           centerTitle: true,
           elevation: 0,
           backgroundColor: darkSurface,
           foregroundColor: darkTextPrimary,
           surfaceTintColor: Colors.transparent,
         ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
           selectedItemColor: primaryLight,
           unselectedItemColor: darkTextSecondary,
           type: BottomNavigationBarType.fixed,

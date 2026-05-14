@@ -343,10 +343,10 @@ class _AvatarPicker extends StatelessWidget {
         onBackgroundImageError: (_, __) {
           // 画像ロード失敗時は child（デフォルトアイコン）が表示される
         },
-        child: Icon(
+        child: const Icon(
           Icons.person,
           size: radius,
-          color: const Color(0xFF1565C0),
+          color: Color(0xFF1565C0),
         ),
       );
     }

@@ -161,10 +161,10 @@ class _FacilityReportScreenState extends ConsumerState<FacilityReportScreen> {
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(
-          content: const Text('送信に失敗しました。通信環境を確認して再度お試しください。'),
+        const SnackBar(
+          content: Text('送信に失敗しました。通信環境を確認して再度お試しください。'),
           backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
+          duration: Duration(seconds: 3),
         ),
       );
     } finally {

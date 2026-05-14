@@ -62,7 +62,7 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen> {
     buffer.writeln();
     buffer.write('#湯マップ #温泉 #湯めぐり');
 
-    Share.share(buffer.toString(), subject: '湯めぐりプラン「${widget.plan.title}」');
+    SharePlus.instance.share(ShareParams(text: buffer.toString(), subject: '湯めぐりプラン「${widget.plan.title}」'));
   }
 
   @override
