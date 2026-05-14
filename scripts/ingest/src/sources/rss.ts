@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { createHash } from 'node:crypto';
 import { RSS_SOURCES, USER_AGENT, FETCH_DELAY_MS } from '../config.ts';
-import { contentHash } from '../supabase-client.ts';
+import { contentHash, summarize } from '../supabase-client.ts';
 import type { SourcePost } from '../supabase-client.ts';
 
 // processEntities: false でパース（Hatena RSS が 1000件超エンティティを持つため上限回避）
@@ -90,6 +90,8 @@ function entryToPost(entry: Record<string, unknown>, sourceName: string): Source
     url: link,
     title: title.slice(0, 500),
     content_text: text,
+    content_summary: summarize(stripHtml(decodeEntities(rawContent))),
+    author_url: String(entry.creator ?? entry.author ?? '') || undefined,
     published_at: published,
     raw: entry,
   };

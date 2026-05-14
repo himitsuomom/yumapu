@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { YOUTUBE_CHANNELS, USER_AGENT, FETCH_DELAY_MS } from '../config.ts';
-import { contentHash } from '../supabase-client.ts';
+import { contentHash, summarize } from '../supabase-client.ts';
 import type { SourcePost } from '../supabase-client.ts';
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
@@ -39,12 +39,17 @@ async function fetchChannelRss(channelId: string, channelName: string): Promise<
       ((e['media:group'] as Record<string, unknown>)?.['media:thumbnail'] as Record<string, unknown>)?.['@_url'] ?? ''
     );
     const text = `${title} ${description}`.slice(0, 2000);
+    const authorUri = String(
+      ((e['author'] as Record<string, unknown>)?.['uri']) ?? ''
+    );
     return {
       id: `youtube:${videoId}`,
       content_hash: contentHash(text),
       url: `https://www.youtube.com/watch?v=${videoId}`,
       title: title.slice(0, 500),
       content_text: description.slice(0, 2000),
+      content_summary: summarize(description || title),
+      author_url: authorUri || `https://www.youtube.com/channel/${channelId}`,
       thumbnail_url: thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       published_at: published,
       raw: e,

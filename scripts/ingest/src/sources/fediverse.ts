@@ -1,5 +1,5 @@
 import { FEDIVERSE_HASHTAGS, MISSKEY_INSTANCES, MASTODON_INSTANCES, USER_AGENT, FETCH_DELAY_MS } from '../config.ts';
-import { contentHash } from '../supabase-client.ts';
+import { contentHash, summarize } from '../supabase-client.ts';
 import type { SourcePost } from '../supabase-client.ts';
 
 function plain(html: string): string {
@@ -42,6 +42,8 @@ async function fetchMisskeyTag(instance: string, tag: string): Promise<SourcePos
         content_hash: contentHash(text),
         url: n.uri ?? `https://${instance}/notes/${n.id}`,
         content_text: text,
+        content_summary: summarize(plain(text)),
+        author_url: n.user?.uri ?? `https://${host}/@${n.user?.username}`,
         published_at: n.createdAt,
         raw: n,
       } satisfies SourcePost;
@@ -72,7 +74,7 @@ interface MastodonStatus {
   created_at: string;
   content: string;
   url: string;
-  account: { acct: string };
+  account: { acct: string; url: string };
   media_attachments: Array<{ preview_url?: string }>;
 }
 
@@ -100,6 +102,8 @@ async function fetchMastodonTag(instance: string, hashtag: string): Promise<Sour
       content_text: text,
       content_html: s.content.slice(0, 4000),
       thumbnail_url: s.media_attachments[0]?.preview_url,
+      content_summary: summarize(text),
+      author_url: s.account.url,
       published_at: s.created_at,
       raw: s,
     } satisfies SourcePost;

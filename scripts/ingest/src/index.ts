@@ -16,27 +16,14 @@
 import { ingestMisskey, ingestMastodon } from './sources/fediverse.ts';
 import { ingestYoutube } from './sources/youtube.ts';
 import { ingestRss } from './sources/rss.ts';
-import { upsertPosts, upsertMentions, loadFacilities } from './supabase-client.ts';
-import { buildMentions, stripHtml } from './matcher.ts';
+import { upsertPosts, enqueueMatching, loadFacilities } from './supabase-client.ts';
 import type { SourcePost } from './supabase-client.ts';
 
-async function processAndSave(source: string, posts: SourcePost[], facilities: Awaited<ReturnType<typeof loadFacilities>>) {
+async function processAndSave(source: string, posts: SourcePost[]) {
   if (posts.length === 0) return;
   const insertedIds = await upsertPosts(posts);
-
-  let mentionCount = 0;
-  for (const post of posts) {
-    // ON CONFLICT DO NOTHING でスキップされた投稿（content_hash重複）はFKエラー回避のためスキップ
-    if (!insertedIds.has(post.id)) continue;
-    const text = post.content_text ?? (post.title ? stripHtml(post.title) : '');
-    if (!text) continue;
-    const mentions = buildMentions(post.id, text, facilities);
-    if (mentions.length > 0) {
-      await upsertMentions(mentions);
-      mentionCount += mentions.length;
-    }
-  }
-  console.log(`[${source}] 投稿 ${insertedIds.size}件 新規保存 / 施設言及 ${mentionCount}件`);
+  const enqueued = await enqueueMatching([...insertedIds]);
+  console.log(`[${source}] 投稿 ${insertedIds.size}件 新規保存 / matching_queue ${enqueued}件 enqueue`);
 }
 
 async function main() {
@@ -49,23 +36,23 @@ async function main() {
   if (mode === 'fediverse' || mode === 'all') {
     console.log('--- Misskey ---');
     const mp = await ingestMisskey();
-    await processAndSave('misskey', mp, facilities);
+    await processAndSave('misskey', mp);
 
     console.log('--- Mastodon ---');
     const msp = await ingestMastodon();
-    await processAndSave('mastodon', msp, facilities);
+    await processAndSave('mastodon', msp);
   }
 
   if (mode === 'youtube' || mode === 'all') {
     console.log('--- YouTube RSS ---');
     const yp = await ingestYoutube();
-    await processAndSave('youtube', yp, facilities);
+    await processAndSave('youtube', yp);
   }
 
   if (mode === 'rss' || mode === 'all') {
     console.log('--- ブログ・メディア RSS ---');
     const rp = await ingestRss();
-    await processAndSave('rss', rp, facilities);
+    await processAndSave('rss', rp);
   }
 
   console.log(`[ingest] 完了: ${new Date().toISOString()}`);

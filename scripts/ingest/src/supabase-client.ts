@@ -34,6 +34,8 @@ export interface SourcePost {
   content_text?: string;
   content_html?: string;
   thumbnail_url?: string;
+  content_summary?: string;   // 公開用要約（280字以内）
+  author_url?: string;        // ActivityPub attributedTo / RSS author URL
   published_at: string;
   raw?: object;
 }
@@ -94,4 +96,19 @@ export async function upsertMentions(mentions: MentionRow[]): Promise<number> {
     .upsert(mentions, { onConflict: 'facility_id,post_id', ignoreDuplicates: true });
   if (error) throw new Error(`upsertMentions: ${error.message}`);
   return mentions.length;
+}
+
+export function summarize(text: string, maxLen = 280): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen - 1) + '…';
+}
+
+export async function enqueueMatching(postIds: string[]): Promise<number> {
+  if (postIds.length === 0) return 0;
+  const { data, error } = await supabase.rpc('enqueue_matching_jobs', {
+    p_post_ids: postIds,
+  });
+  if (error) throw new Error(`enqueueMatching: ${error.message}`);
+  return typeof data === 'number' ? data : postIds.length;
 }
