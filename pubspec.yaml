@@ -42,6 +42,7 @@ dependencies:
   # Ads & Monetization
   google_mobile_ads: ^4.0.0
   purchases_flutter: 9.12.0
+  app_tracking_transparency: ^2.0.4
   
   # Analytics & Push Notifications
   firebase_core: ^2.24.2
