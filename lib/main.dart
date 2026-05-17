@@ -77,8 +77,12 @@ Future<void> main() async {
 
   // 6. NotificationService — FCM 初期化と通知ハンドラー設定。
   //    Firebase が初期化済みの場合のみ有効。ログイン後に registerToken() を呼ぶ。
+  //    getInitialMessage() がバンドルID不一致時にハングする可能性があるため
+  //    5秒のタイムアウトを設ける。
   try {
-    await NotificationService.instance.initialize();
+    await NotificationService.instance
+        .initialize()
+        .timeout(const Duration(seconds: 5));
   } catch (e) {
     debugPrint('NotificationService init skipped: $e');
   }
