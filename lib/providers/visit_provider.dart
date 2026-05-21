@@ -133,11 +133,9 @@ final visitAllProvider =
 
 // ── Visit actions ────────────────────────────────────────────────────────────
 
-class VisitNotifier extends StateNotifier<AsyncValue<void>> {
-  VisitNotifier(this._client, this._userId) : super(const AsyncData(null));
-
-  final SupabaseClient? _client;
-  final String? _userId;
+class VisitNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
 
   Future<void> logVisit({
     required String facilityId,
@@ -145,9 +143,9 @@ class VisitNotifier extends StateNotifier<AsyncValue<void>> {
     int? rating,
     DateTime? visitedAt,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
@@ -155,7 +153,7 @@ class VisitNotifier extends StateNotifier<AsyncValue<void>> {
     try {
       await client.from('visits').insert({
         'facility_id': facilityId,
-        'user_id': userId,
+        'user_id': session.user.id,
         if (note != null) 'note': note,
         if (rating != null) 'rating': rating,
         'visited_at': (visitedAt ?? DateTime.now()).toIso8601String(),
@@ -167,16 +165,16 @@ class VisitNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> deleteVisit(String visitId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
     state = const AsyncLoading();
     try {
       await client
           .from('visits')
           .delete()
           .eq('id', visitId)
-          .eq('user_id', userId);
+          .eq('user_id', session.user.id);
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -185,8 +183,4 @@ class VisitNotifier extends StateNotifier<AsyncValue<void>> {
 }
 
 final visitNotifierProvider =
-    StateNotifierProvider<VisitNotifier, AsyncValue<void>>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  final session = ref.watch(sessionProvider);
-  return VisitNotifier(client, session?.user.id);
-});
+    AsyncNotifierProvider<VisitNotifier, void>(VisitNotifier.new);

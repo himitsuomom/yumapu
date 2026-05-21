@@ -142,23 +142,22 @@ final myReviewForFacilityProvider =
 
 // ── Review actions ───────────────────────────────────────────────────────────
 
-class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
-  ReviewNotifier(this._client, this._userId) : super(const AsyncData(null));
-
-  final SupabaseClient? _client;
-  final String? _userId;
+class ReviewNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
 
   Future<void> postReview({
     required String facilityId,
     required String content,
     required int rating,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
+    final userId = session.user.id;
     state = const AsyncLoading();
     try {
       // 重複レビューの事前チェック（DB の UNIQUE 制約の前に確認してユーザーに分かりやすいエラーを返す）
@@ -206,12 +205,13 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
     required String content,
     required int rating,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
+    final userId = session.user.id;
     state = const AsyncLoading();
     try {
       await client
@@ -229,9 +229,10 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> deleteReview(String reviewId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
+    final userId = session.user.id;
     state = const AsyncLoading();
     try {
       await client
@@ -247,13 +248,13 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Inserts a like for [reviewId]. Silently ignores duplicate-like errors.
   Future<void> likeReview(String reviewId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
     try {
       await client.from('review_likes').insert({
         'review_id': reviewId,
-        'user_id': userId,
+        'user_id': session.user.id,
       });
     } catch (_) {
       // Already liked or network error — no state change needed
@@ -262,15 +263,15 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Removes a like for [reviewId]. Silently ignores not-found errors.
   Future<void> unlikeReview(String reviewId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
     try {
       await client
           .from('review_likes')
           .delete()
           .eq('review_id', reviewId)
-          .eq('user_id', userId);
+          .eq('user_id', session.user.id);
     } catch (_) {
       // Not liked or network error — no state change needed
     }
@@ -278,11 +279,7 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
 }
 
 final reviewNotifierProvider =
-    StateNotifierProvider<ReviewNotifier, AsyncValue<void>>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  final session = ref.watch(sessionProvider);
-  return ReviewNotifier(client, session?.user.id);
-});
+    AsyncNotifierProvider<ReviewNotifier, void>(ReviewNotifier.new);
 
 /// ログイン中ユーザーがいいねしたレビューID一覧。
 ///

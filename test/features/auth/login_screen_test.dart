@@ -11,22 +11,21 @@ import 'package:yu_map/features/auth/screens/login_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
 // ── Minimal stub that never hits Supabase ─────────────────────────────────
-// Extends AuthNotifier (which is a StateNotifier) passing null as the client.
+// Extends AuthNotifier (AsyncNotifier) with no-op build.
 class _StubAuthNotifier extends AuthNotifier {
-  _StubAuthNotifier() : super(null);
+  @override
+  Future<void> build() async {}
 }
 
 void main() {
   Widget buildSubject({AsyncValue<void> authState = const AsyncData(null)}) {
-    final stubNotifier = _StubAuthNotifier();
-
     return ProviderScope(
       overrides: [
         // Override supabase client → null (not configured)
         supabaseClientProvider.overrideWithValue(null),
 
         // Override the auth notifier with our stub
-        authNotifierProvider.overrideWith((ref) => _StubAuthNotifier()),
+        authNotifierProvider.overrideWith(_StubAuthNotifier.new),
 
         // sessionProvider → null (not signed in)
         sessionProvider.overrideWithValue(null),

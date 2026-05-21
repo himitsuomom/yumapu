@@ -11,9 +11,6 @@ import 'package:yu_map/features/settings/settings_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/subscription_provider.dart';
 import 'package:yu_map/providers/theme_provider.dart';
-import 'package:yu_map/services/subscription_service.dart';
-
-
 // ── Stub notifiers ────────────────────────────────────────────────────────
 
 /// Thin ThemeModeNotifier that skips FlutterSecureStorage read.
@@ -30,7 +27,8 @@ class _StubThemeModeNotifier extends ThemeModeNotifier {
 /// SubscriptionNotifier backed by the real (no-op) SubscriptionService.
 /// isRevenueCatConfigured is false in tests so no platform channels are hit.
 class _StubSubscriptionNotifier extends SubscriptionNotifier {
-  _StubSubscriptionNotifier() : super(SubscriptionService());
+  @override
+  SubscriptionState build() => const SubscriptionState();
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────
@@ -44,7 +42,7 @@ Widget buildSubject({bool isSignedIn = false}) {
       isAdminProvider.overrideWith((ref) async => false),
       currentUserProfileProvider.overrideWith((ref) async => null),
       subscriptionProvider.overrideWith(
-        (ref) => _StubSubscriptionNotifier(),
+        _StubSubscriptionNotifier.new,
       ),
       themeModeProvider.overrideWith(() => _StubThemeModeNotifier()),
     ],

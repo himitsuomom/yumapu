@@ -30,22 +30,22 @@ class SubscriptionState {
 
 // ── Notifier ─────────────────────────────────────────────────────────────────
 
-class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
-  SubscriptionNotifier(this._service) : super(const SubscriptionState()) {
-    _init();
+class SubscriptionNotifier extends Notifier<SubscriptionState> {
+  @override
+  SubscriptionState build() {
+    Future.microtask(_init);
+    return const SubscriptionState();
   }
 
-  final SubscriptionService _service;
+  SubscriptionService get _service => ref.read(subscriptionServiceProvider);
 
   Future<void> _init() async {
-    if (!mounted) return;
     state = state.copyWith(isLoading: true);
     final isPremium = await _service.isPremiumUser();
-    if (!mounted) return;
     state = state.copyWith(isPremium: isPremium, isLoading: false);
 
     _service.listenToPremiumStatus((isPremium) {
-      if (mounted) state = state.copyWith(isPremium: isPremium);
+      state = state.copyWith(isPremium: isPremium);
     });
   }
 
@@ -54,13 +54,9 @@ class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
     try {
       await _service.purchaseMonthly();
       final isPremium = await _service.isPremiumUser();
-      if (mounted) {
-        state = state.copyWith(isPremium: isPremium, isLoading: false);
-      }
+      state = state.copyWith(isPremium: isPremium, isLoading: false);
     } catch (e) {
-      if (mounted) {
-        state = state.copyWith(isLoading: false, error: e.toString());
-      }
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -68,13 +64,9 @@ class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final isPremium = await _service.restorePurchases();
-      if (mounted) {
-        state = state.copyWith(isPremium: isPremium, isLoading: false);
-      }
+      state = state.copyWith(isPremium: isPremium, isLoading: false);
     } catch (e) {
-      if (mounted) {
-        state = state.copyWith(isLoading: false, error: e.toString());
-      }
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 }
@@ -86,6 +78,6 @@ final subscriptionServiceProvider = Provider<SubscriptionService>((ref) {
 });
 
 final subscriptionProvider =
-    StateNotifierProvider<SubscriptionNotifier, SubscriptionState>((ref) {
-  return SubscriptionNotifier(ref.read(subscriptionServiceProvider));
-});
+    NotifierProvider<SubscriptionNotifier, SubscriptionState>(
+  SubscriptionNotifier.new,
+);
