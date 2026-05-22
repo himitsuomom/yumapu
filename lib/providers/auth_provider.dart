@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
@@ -53,7 +54,8 @@ final currentUserProfileProvider =
         .maybeSingle();
     if (data == null) return null;
     return app.User.fromJson(data);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('currentUserProfileProvider error: $e\n$st');
     return null;
   }
 });
@@ -174,7 +176,8 @@ final isAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
         .eq('id', session.user.id)
         .maybeSingle();
     return (data?['is_admin'] as bool?) ?? false;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('isAdminProvider error: $e\n$st');
     return false;
   }
 });
@@ -196,7 +199,8 @@ final isApprovedOwnerProvider =
         .eq('status', 'approved')
         .maybeSingle();
     return data != null;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('isApprovedOwnerProvider error: $e\n$st');
     return false;
   }
 });

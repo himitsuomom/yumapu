@@ -3,6 +3,7 @@
 // 投稿コメントの状態管理
 // 特定の投稿（postId）に対するコメントの取得・追加を管理する。
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/models/post.dart';
 import 'package:yu_map/providers/auth_provider.dart';
@@ -99,8 +100,9 @@ class CommentNotifier
     try {
       final refreshed = await _fetchComments(arg);
       state = AsyncData(refreshed);
-    } catch (_) {
+    } catch (e, st) {
       // バックグラウンド取得失敗時は楽観的データをそのまま表示し続ける
+      debugPrint('CommentNotifier background refresh failed: $e\n$st');
     }
   }
 
@@ -137,8 +139,9 @@ class CommentNotifier
         }).toList();
         feedNotifier.updateState(updated);
       }
-    } catch (_) {
+    } catch (e, st) {
       // 削除失敗時はリストを再読み込みして整合性を保つ
+      debugPrint('CommentNotifier.deleteComment failed: $e\n$st');
       await load();
     }
   }

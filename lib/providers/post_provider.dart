@@ -3,6 +3,7 @@
 // 投稿フィード機能のデータ管理
 // posts テーブルと users テーブルを JOIN し、いいね済み状態も取得する
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -270,8 +271,9 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
 
       _hasMore = newPosts.length >= _pageSize;
       state = AsyncData([...current, ...newPosts]);
-    } catch (_) {
+    } catch (e, st) {
       // loadMore の失敗は致命的ではないため無視（次回スクロールで再試行できる）
+      debugPrint('PostFeedNotifier.loadMore failed: $e\n$st');
     } finally {
       _isLoadingMore = false;
     }
@@ -307,8 +309,9 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         'post_id': postId,
         'user_id': session.user.id,
       });
-    } catch (_) {
+    } catch (e, st) {
       // 失敗したら元に戻す（current は未変更なのでそのまま使える）
+      debugPrint('PostFeedNotifier.likePost failed, rolling back: $e\n$st');
       state = AsyncData(current);
     }
   }
@@ -334,8 +337,9 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
           .delete()
           .eq('post_id', postId)
           .eq('user_id', session.user.id);
-    } catch (_) {
+    } catch (e, st) {
       // 失敗したら元に戻す
+      debugPrint('PostFeedNotifier.unlikePost failed, rolling back: $e\n$st');
       state = AsyncData(current);
     }
   }
@@ -420,12 +424,14 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
                   .remove([storagePath]);
             }
           }
-        } catch (_) {
+        } catch (e, st) {
           // Storage 削除失敗は致命的ではないため無視
+          debugPrint('PostFeedNotifier.deletePost Storage removal failed: $e\n$st');
         }
       }
-    } catch (_) {
+    } catch (e, st) {
       // DB 削除失敗: ロールバック
+      debugPrint('PostFeedNotifier.deletePost failed, rolling back: $e\n$st');
       state = AsyncData(current);
       rethrow;
     }
@@ -456,8 +462,9 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
           .update({'content': newContent})
           .eq('id', postId)
           .eq('user_id', session.user.id);
-    } catch (_) {
+    } catch (e, st) {
       // DB更新失敗: 楽観的更新をロールバック
+      debugPrint('PostFeedNotifier.editPost failed, rolling back: $e\n$st');
       state = AsyncData(current);
       rethrow;
     }

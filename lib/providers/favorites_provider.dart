@@ -1,24 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/core/result/result_extensions.dart';
+import 'package:yu_map/providers/repository_providers.dart';
 
 // ── Notifier ─────────────────────────────────────────────────────────────────
 
 class FavoritesNotifier extends AsyncNotifier<Set<String>> {
   @override
   Future<Set<String>> build() async {
-    final client = ref.watch(supabaseClientProvider);
-    final session = ref.watch(sessionProvider);
-    if (client == null || session == null) return {};
-
-    final rows = await client
-        .from('favorites')
-        .select('facility_id')
-        .eq('user_id', session.user.id) as List;
-    return rows.map((r) => r['facility_id'] as String).toSet();
+    final repo = ref.watch(favoritesRepositoryProvider);
+    final result = await repo.getFavoriteIds();
+    return result.dataOrNull ?? {};
   }
 
-  /// Public reload trigger — re-fetches favorites from Supabase.
+  /// Public reload trigger — re-fetches favorites from the repository.
   ///
   /// Useful when called from [HomeShell.initState] to ensure the local
   /// favorites set is fresh after login.
@@ -30,13 +25,9 @@ class FavoritesNotifier extends AsyncNotifier<Set<String>> {
 
   /// Toggles the favorite state with optimistic update.
   ///
-  /// Immediately updates the local state, then syncs with Supabase.
+  /// Immediately updates the local state, then syncs via the repository.
   /// Rolls back to the previous state if the server call fails.
   Future<void> toggle(String facilityId) async {
-    final client = ref.read(supabaseClientProvider);
-    final session = ref.read(sessionProvider);
-    if (client == null || session == null) return;
-
     final previous = state.valueOrNull ?? {};
     final wasFavorited = previous.contains(facilityId);
 
@@ -49,23 +40,15 @@ class FavoritesNotifier extends AsyncNotifier<Set<String>> {
     }
     state = AsyncData(optimistic);
 
-    try {
-      if (wasFavorited) {
-        await client
-            .from('favorites')
-            .delete()
-            .eq('user_id', session.user.id)
-            .eq('facility_id', facilityId);
-      } else {
-        await client.from('favorites').insert({
-          'user_id': session.user.id,
-          'facility_id': facilityId,
-        });
-      }
-    } catch (e) {
-      debugPrint('Favorites toggle failed, rolling back: $e');
+    final repo = ref.read(favoritesRepositoryProvider);
+    final result = wasFavorited
+        ? await repo.removeFavorite(facilityId)
+        : await repo.addFavorite(facilityId);
+
+    result.onFailure((e) {
+      debugPrint('FavoritesNotifier.toggle failed, rolling back: $e');
       state = AsyncData(previous);
-    }
+    });
   }
 }
 

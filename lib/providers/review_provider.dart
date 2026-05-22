@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
@@ -36,7 +37,8 @@ final reviewCountProvider =
         .eq('facility_id', facilityId)
         .count(CountOption.exact);
     return response.count;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('reviewCountProvider error: $e\n$st');
     return 0;
   }
 });
@@ -56,8 +58,9 @@ final facilityAvgRatingProvider =
         .rpc('get_facility_avg_rating', params: {'p_facility_id': facilityId});
     if (result == null) return 0.0;
     return double.tryParse(result.toString()) ?? 0.0;
-  } catch (_) {
+  } catch (e, st) {
     // RPC 未デプロイや一時エラーの場合は 0.0 を返してUIへの影響を最小化する
+    debugPrint('facilityAvgRatingProvider error: $e\n$st');
     return 0.0;
   }
 });
@@ -91,8 +94,9 @@ final facilityReviewSummaryProvider =
         ? 0.0
         : double.tryParse(map['avg_rating'].toString()) ?? 0.0;
     return (count: count, avgRating: avg);
-  } catch (_) {
+  } catch (e, st) {
     // RPC未デプロイや一時エラーの場合: 既存プロバイダーにフォールバック
+    debugPrint('facilityReviewSummaryProvider RPC failed, falling back: $e\n$st');
     try {
       final countResult = await client
           .from('reviews')
@@ -108,7 +112,8 @@ final facilityReviewSummaryProvider =
         avg = avgResult == null ? 0.0 : (double.tryParse(avgResult.toString()) ?? 0.0);
       }
       return (count: count, avgRating: avg);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('facilityReviewSummaryProvider fallback error: $e\n$st');
       return (count: 0, avgRating: 0.0);
     }
   }
@@ -135,7 +140,8 @@ final myReviewForFacilityProvider =
         .limit(1) as List;
     if (rows.isEmpty) return null;
     return Review.fromJson(rows.first as Map<String, dynamic>);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('myReviewForFacilityProvider error: $e\n$st');
     return null;
   }
 });
@@ -256,8 +262,9 @@ class ReviewNotifier extends AsyncNotifier<void> {
         'review_id': reviewId,
         'user_id': session.user.id,
       });
-    } catch (_) {
+    } catch (e, st) {
       // Already liked or network error — no state change needed
+      debugPrint('ReviewNotifier.likeReview failed: $e\n$st');
     }
   }
 
@@ -272,8 +279,9 @@ class ReviewNotifier extends AsyncNotifier<void> {
           .delete()
           .eq('review_id', reviewId)
           .eq('user_id', session.user.id);
-    } catch (_) {
+    } catch (e, st) {
       // Not liked or network error — no state change needed
+      debugPrint('ReviewNotifier.unlikeReview failed: $e\n$st');
     }
   }
 }
@@ -300,7 +308,8 @@ final likedReviewIdsProvider =
         .eq('user_id', session.user.id)
         .eq('reviews.facility_id', facilityId) as List;
     return rows.map((r) => r['review_id'] as String).toSet();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('likedReviewIdsProvider error: $e\n$st');
     return {};
   }
 });
