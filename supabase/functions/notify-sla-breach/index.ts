@@ -10,6 +10,16 @@ serve(async (req) => {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  // CRON_SECRET 認証
+  const cronSecret = Deno.env.get('CRON_SECRET');
+  const authHeader = req.headers.get('Authorization');
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false },
   });
