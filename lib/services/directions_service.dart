@@ -6,10 +6,10 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
+import 'package:yu_map/core/network/secure_http_client.dart';
 
 /// Google Directions API の結果を保持するクラス
 class DirectionsResult {
@@ -69,7 +69,8 @@ class DirectionsService {
     });
 
     try {
-      final response = await http.post(url, headers: headers, body: body);
+      if (!SecureHttpClient.assertHttps(url)) return null;
+      final response = await SecureHttpClient.instance.post(url, headers: headers, body: body);
 
       if (response.statusCode != 200) {
         debugPrint(
