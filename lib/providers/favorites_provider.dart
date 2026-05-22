@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
@@ -61,8 +62,8 @@ class FavoritesNotifier extends AsyncNotifier<Set<String>> {
           'facility_id': facilityId,
         });
       }
-    } catch (_) {
-      // Roll back to previous state on failure
+    } catch (e) {
+      debugPrint('Favorites toggle failed, rolling back: $e');
       state = AsyncData(previous);
     }
   }

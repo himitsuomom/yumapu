@@ -227,7 +227,8 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
     // https://yumap.app/facility/{id} → pathSegments = ['facility', '{id}']
     if (segments.length >= 2 && segments[0] == 'facility') {
       final facilityId = segments[1];
-      if (facilityId.isNotEmpty && mounted) {
+      // UUID または英数字ハイフン形式のみ許可（インジェクション・不正IDを防ぐ）
+      if (_isValidFacilityId(facilityId) && mounted) {
         // Navigator がスタックに積まれていることを前提に pushNamed する。
         // まだ HomeShell が表示される前（_onboardingCompleted == null）の場合は
         // 少し待ってから再実行する。
@@ -238,6 +239,11 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         });
       }
     }
+  }
+
+  static bool _isValidFacilityId(String id) {
+    if (id.isEmpty || id.length > 64) return false;
+    return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(id);
   }
 
   @override
