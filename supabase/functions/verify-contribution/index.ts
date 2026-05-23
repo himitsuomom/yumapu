@@ -2,9 +2,54 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 serve(async (req) => {
-  const { facility_id, amenity_id, reported_value, user_id } = await req.json()
-  
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  // JWT 認証チェック — 未認証リクエストを拒否する
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return new Response(
+      JSON.stringify({ error: 'Missing or invalid Authorization header' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+
+  // Anon key クライアント（ユーザーのJWTで認証）
+  const supabaseUser = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } }
+  )
+
+  // 認証済みユーザーを取得
+  const { data: { user }, error: authError } = await supabaseUser.auth.getUser()
+  if (authError || !user) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+
+  const { facility_id, amenity_id, reported_value } = await req.json()
+
+  // user_id はリクエストボディからではなく、認証済みJWTから取得する
+  const userId = user.id
+
+  if (!facility_id || !amenity_id || reported_value === undefined) {
+    return new Response(
+      JSON.stringify({ error: 'Missing required fields: facility_id, amenity_id, reported_value' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+
+  // SERVICE_ROLE_KEY クライアント（RLSバイパスでDB操作）
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -25,13 +70,9 @@ serve(async (req) => {
       amenity_id,
       value: reported_value,
       confidence_score: 50,
-      contributed_by: user_id,
+      contributed_by: userId,
       verification_count: 1
     })
-    
-    // Award explorer points (Assuming awardPoints helper or direct insert)
-    // For simplicity in this mock, we skip awardPoints call as it's not defined in the plan snippet fully
-    // In a real app, this would call a shared helper or another function
   } else if (existing.value === reported_value) {
     // Verification matches - increase confidence
     const newConfidence = Math.min(100, existing.confidence_score + 10)
@@ -42,27 +83,15 @@ serve(async (req) => {
         verified_at: new Date().toISOString()
       })
       .eq('id', existing.id)
-    
   } else {
     // Conflicting data - decrease confidence or flag for review
     const newConfidence = Math.max(0, existing.confidence_score - 5)
     await supabase.from('facility_amenities')
       .update({ confidence_score: newConfidence })
       .eq('id', existing.id)
-    
-    // Log the conflict for manual review (assuming table exists or logging mechanism)
-    /* 
-    await supabase.from('contribution_conflicts').insert({
-      facility_id,
-      amenity_id,
-      existing_value: existing.value,
-      new_value: reported_value,
-      reporter_id: user_id
-    }) 
-    */
   }
 
   return new Response(JSON.stringify({ success: true }), {
-    headers: { 'Content-Type': 'application/json' }
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
 })

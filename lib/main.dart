@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -12,6 +15,20 @@ import 'package:yu_map/firebase_options.dart';
 import 'package:yu_map/services/analytics_service.dart';
 import 'package:yu_map/services/notification_service.dart';
 import 'package:yu_map/services/subscription_service.dart';
+
+/// Requests App Tracking Transparency permission on iOS.
+/// Must be called BEFORE MobileAds.instance.initialize() per Apple guidelines.
+/// No-op on Android.
+Future<void> _requestTrackingPermission() async {
+  if (!Platform.isIOS) return;
+  final status = await AppTrackingTransparency.trackingAuthorizationStatus;
+  if (status == TrackingStatus.notDetermined) {
+    // Brief delay ensures the app has finished launching before showing the
+    // system dialog (avoids the dialog appearing over the splash screen).
+    await Future.delayed(const Duration(milliseconds: 200));
+    await AppTrackingTransparency.requestTrackingAuthorization();
+  }
+}
 
 Future<void> main() async {
   // A-1対応: スプラッシュ画面を初期化が完了するまで保持する。
@@ -42,7 +59,11 @@ Future<void> main() async {
     );
   }
 
-  // 3. AdMob — skipped when ad unit IDs are not provided.
+  // 3. ATT (App Tracking Transparency) — iOS only, must run BEFORE AdMob init.
+  //    Apple requires the prompt to appear before any IDFA access.
+  await _requestTrackingPermission();
+
+  // 3b. AdMob — skipped when ad unit IDs are not provided.
   if (AppConfig.isAdMobConfigured) {
     await MobileAds.instance.initialize();
   }
@@ -56,8 +77,12 @@ Future<void> main() async {
 
   // 6. NotificationService — FCM 初期化と通知ハンドラー設定。
   //    Firebase が初期化済みの場合のみ有効。ログイン後に registerToken() を呼ぶ。
+  //    getInitialMessage() がバンドルID不一致時にハングする可能性があるため
+  //    5秒のタイムアウトを設ける。
   try {
-    await NotificationService.instance.initialize();
+    await NotificationService.instance
+        .initialize()
+        .timeout(const Duration(seconds: 5));
   } catch (e) {
     debugPrint('NotificationService init skipped: $e');
   }

@@ -209,7 +209,7 @@ class _FacilityPreviewSheetState
   void _shareFacility() {
     final facility = widget.facility;
     final url = '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
-    Share.share('${facility.displayName}\n$url', subject: '湯マップ — ${facility.displayName}');
+    SharePlus.instance.share(ShareParams(text: '${facility.displayName}\n$url', subject: '湯マップ — ${facility.displayName}'));
   }
 
   // ── チェックイン ───────────────────────────────────────────────────────────

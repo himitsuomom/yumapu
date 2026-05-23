@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show ValueNotifier, WidgetsBinding;
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/navigation/app_navigator.dart';
@@ -32,6 +34,8 @@ class NotificationService {
 
   final _messaging = FirebaseMessaging.instance;
   final _localNotifications = FlutterLocalNotificationsPlugin();
+
+  StreamSubscription<String>? _tokenRefreshSub;
 
   /// cold start（アプリ終了状態から通知タップで起動）時に
   /// Navigator がまだ存在しないため、一時的に保留するルート。
@@ -157,8 +161,9 @@ class NotificationService {
     final token = await _messaging.getToken();
     if (token != null) await _upsertToken(token);
 
-    // トークンリフレッシュ時に再保存
-    _messaging.onTokenRefresh.listen(_upsertToken);
+    // トークンリフレッシュ時に再保存（subscriptionを保持してleak防止）
+    _tokenRefreshSub?.cancel();
+    _tokenRefreshSub = _messaging.onTokenRefresh.listen(_upsertToken);
   }
 
   /// ログアウト時に呼ぶ: このデバイスのトークンを削除する
@@ -176,6 +181,15 @@ class NotificationService {
         .catchError((e) => debugPrint('push token remove failed: $e'));
 
     await _messaging.deleteToken();
+  }
+
+  /// トークンリフレッシュのサブスクリプションを解放する。
+  ///
+  /// アプリ終了時やログアウト後に呼ぶ。シングルトンのため通常は
+  /// [removeToken] からの呼び出しで十分。
+  void dispose() {
+    _tokenRefreshSub?.cancel();
+    _tokenRefreshSub = null;
   }
 
   Future<void> _upsertToken(String token) async {

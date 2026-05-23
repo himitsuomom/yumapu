@@ -11,46 +11,25 @@
 //   isFollowingProvider      — 特定ユーザーをフォロー中かどうか
 //   followCountsProvider     — あるユーザーのフォロワー数・フォロー中数
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:yu_map/providers/auth_provider.dart';
+import 'package:yu_map/core/result/result_extensions.dart';
+import 'package:yu_map/providers/repository_providers.dart';
 
 // ────────────────────────────────────────────────────────────────────────────
-// 自分がフォロー中のユーザーIDセットを管理する StateNotifier
+// 自分がフォロー中のユーザーIDセットを管理する AsyncNotifier
 // ────────────────────────────────────────────────────────────────────────────
 
 /// 自分がフォローしているユーザーIDの集合（Set）を保持するプロバイダー
 ///
 /// Set を使う理由: フォロー済みかの判定が O(1) で高速。
 /// フォロー/アンフォロー時に楽観的UI更新（画面を即時更新）を行う。
-class FollowingNotifier extends StateNotifier<AsyncValue<Set<String>>> {
-  FollowingNotifier(this._ref) : super(const AsyncLoading()) {
-    _load();
-  }
-
-  final Ref _ref;
-
-  Future<void> _load() async {
-    final client = _ref.read(supabaseClientProvider);
-    final session = _ref.read(sessionProvider);
-    if (client == null || session == null) {
-      state = const AsyncData({});
-      return;
-    }
-
-    try {
-      // 自分がフォローしているユーザーのIDを全件取得
-      final data = await client
-          .from('user_follows')
-          .select('following_id')
-          .eq('follower_id', session.user.id);
-
-      final ids = (data as List)
-          .map((e) => e['following_id'] as String)
-          .toSet();
-      state = AsyncData(ids);
-    } catch (e, st) {
-      state = AsyncError(e, st);
-    }
+class FollowingNotifier extends AsyncNotifier<Set<String>> {
+  @override
+  Future<Set<String>> build() async {
+    final repo = ref.watch(followRepositoryProvider);
+    final result = await repo.getFollowingIds();
+    return result.dataOrNull ?? {};
   }
 
   /// フォロー処理（楽観的UI更新 + DB書き込み）
@@ -58,34 +37,23 @@ class FollowingNotifier extends StateNotifier<AsyncValue<Set<String>>> {
   /// 楽観的UI更新 = ボタンを押した瞬間に画面を変え、DB処理は裏で行う。
   /// 失敗したら元に戻す（ロールバック）。
   Future<void> follow(String targetUserId) async {
-    final client = _ref.read(supabaseClientProvider);
-    final session = _ref.read(sessionProvider);
-    if (client == null || session == null) return;
-
     final current = state.valueOrNull ?? {};
     if (current.contains(targetUserId)) return; // すでにフォロー中
 
     // 楽観的UI更新: 画面を即時更新
     state = AsyncData({...current, targetUserId});
 
-    try {
-      await client.from('user_follows').insert({
-        'follower_id':  session.user.id,
-        'following_id': targetUserId,
-      });
-    } catch (_) {
+    final repo = ref.read(followRepositoryProvider);
+    final result = await repo.follow(targetUserId);
+    result.onFailure((e) {
       // DB書き込み失敗: ロールバック
+      debugPrint('FollowingNotifier.follow failed, rolling back: $e');
       state = AsyncData(current);
-      rethrow;
-    }
+    });
   }
 
   /// アンフォロー処理（楽観的UI更新 + DB削除）
   Future<void> unfollow(String targetUserId) async {
-    final client = _ref.read(supabaseClientProvider);
-    final session = _ref.read(sessionProvider);
-    if (client == null || session == null) return;
-
     final current = state.valueOrNull ?? {};
     if (!current.contains(targetUserId)) return; // フォローしていない
 
@@ -93,21 +61,17 @@ class FollowingNotifier extends StateNotifier<AsyncValue<Set<String>>> {
     final updated = {...current}..remove(targetUserId);
     state = AsyncData(updated);
 
-    try {
-      await client
-          .from('user_follows')
-          .delete()
-          .eq('follower_id', session.user.id)
-          .eq('following_id', targetUserId);
-    } catch (_) {
+    final repo = ref.read(followRepositoryProvider);
+    final result = await repo.unfollow(targetUserId);
+    result.onFailure((e) {
       // DB削除失敗: ロールバック
+      debugPrint('FollowingNotifier.unfollow failed, rolling back: $e');
       state = AsyncData(current);
-      rethrow;
-    }
+    });
   }
 
   /// フォロー状態を再読み込み（ログイン直後などに使用）
-  Future<void> refresh() => _load();
+  Future<void> refresh() async => ref.invalidateSelf();
 }
 
 /// 自分がフォロー中のユーザーIDセット
@@ -115,9 +79,9 @@ class FollowingNotifier extends StateNotifier<AsyncValue<Set<String>>> {
 /// autoDispose にしない理由: アプリ全体でフォロー状態を共有するため。
 /// 毎回ロードが走ると UX が低下するため、グローバルに保持する。
 final followingIdsProvider =
-    StateNotifierProvider<FollowingNotifier, AsyncValue<Set<String>>>((ref) {
-  return FollowingNotifier(ref);
-});
+    AsyncNotifierProvider<FollowingNotifier, Set<String>>(
+  FollowingNotifier.new,
+);
 
 // ────────────────────────────────────────────────────────────────────────────
 // 特定ユーザーをフォロー中かどうかを返すセレクタープロバイダー
@@ -152,20 +116,11 @@ class FollowCounts {
 /// `autoDispose` = 画面を離れたらキャッシュを解放してメモリを節約する。
 final followCountsProvider =
     FutureProvider.family.autoDispose<FollowCounts, String>((ref, userId) async {
-  final client = ref.read(supabaseClientProvider);
-  if (client == null) return const FollowCounts(followersCount: 0, followingCount: 0);
-
-  try {
-    final result = await client.rpc(
-      'get_follow_counts',
-      params: {'p_user_id': userId},
-    );
-    final row = (result as List).firstOrNull as Map<String, dynamic>?;
-    return FollowCounts(
-      followersCount: (row?['followers_count'] as num?)?.toInt() ?? 0,
-      followingCount: (row?['following_count'] as num?)?.toInt() ?? 0,
-    );
-  } catch (_) {
-    return const FollowCounts(followersCount: 0, followingCount: 0);
-  }
+  final repo = ref.read(followRepositoryProvider);
+  final result = await repo.getFollowCounts(userId);
+  final counts = result.dataOrNull ?? (followers: 0, following: 0);
+  return FollowCounts(
+    followersCount: counts.followers,
+    followingCount: counts.following,
+  );
 });

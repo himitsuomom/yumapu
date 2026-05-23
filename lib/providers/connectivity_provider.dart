@@ -9,32 +9,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// then every 30 seconds. Uses [InternetAddress.lookup] from dart:io
 /// (no connectivity_plus dependency required).
 final connectivityProvider =
-    StateNotifierProvider<ConnectivityNotifier, bool>((ref) {
-  return ConnectivityNotifier();
-});
+    NotifierProvider<ConnectivityNotifier, bool>(ConnectivityNotifier.new);
 
-class ConnectivityNotifier extends StateNotifier<bool> {
-  ConnectivityNotifier() : super(true) {
+class ConnectivityNotifier extends Notifier<bool> {
+  Timer? _timer;
+
+  @override
+  bool build() {
     _check();
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _check());
+    ref.onDispose(() => _timer?.cancel());
+    return true;
   }
-
-  Timer? _timer;
 
   Future<void> _check() async {
     try {
       final result = await InternetAddress.lookup('google.com');
-      if (mounted) {
-        state = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
-      }
+      state = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
     } on SocketException {
-      if (mounted) state = false;
+      state = false;
     }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 }

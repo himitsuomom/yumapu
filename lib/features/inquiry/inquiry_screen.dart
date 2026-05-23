@@ -251,7 +251,7 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
 
               // 施設名（必須 or 任意：種別による）
               if (_isFacilityNameRequired)
-                _RequiredLabel(label: '施設名')
+                const _RequiredLabel(label: '施設名')
               else
                 const Text(
                   '関連する施設・機能（任意）',
@@ -270,7 +270,7 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> {
               const SizedBox(height: 20),
 
               // 本文（必須）
-              _RequiredLabel(label: '詳細・内容'),
+              const _RequiredLabel(label: '詳細・内容'),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _messageCtrl,

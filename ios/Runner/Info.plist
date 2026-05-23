@@ -40,6 +40,8 @@
 	<string>レビュー投稿用の写真を選択するために写真ライブラリを使用します。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>撮影した写真を写真ライブラリに保存するために使用します。</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>広告をカスタマイズするため、デバイスの広告識別子へのアクセスを使用します。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

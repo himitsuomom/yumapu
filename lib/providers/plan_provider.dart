@@ -6,7 +6,6 @@
 // - 施設をプランに追加 / 除去
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/models/onsen_plan.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 
@@ -35,11 +34,9 @@ final myPlansProvider =
 
 // ── プラン操作 ────────────────────────────────────────────────────────────────
 
-class PlanNotifier extends StateNotifier<AsyncValue<void>> {
-  PlanNotifier(this._client, this._userId) : super(const AsyncData(null));
-
-  final SupabaseClient? _client;
-  final String? _userId;
+class PlanNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
 
   /// 新しいプランを作成する
   Future<OnsenPlan?> createPlan({
@@ -47,9 +44,9 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
     String? description,
     bool isPublic = false,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return null;
     }
@@ -59,7 +56,7 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
       final data = await client
           .from('onsen_plans')
           .insert({
-            'user_id': userId,
+            'user_id': session.user.id,
             'title': title,
             if (description != null && description.isNotEmpty)
               'description': description,
@@ -83,9 +80,9 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
     required String facilityId,
     required List<String> currentFacilityIds,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
@@ -102,7 +99,7 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
           .from('onsen_plans')
           .update({'facility_ids': newIds})
           .eq('id', planId)
-          .eq('user_id', userId);
+          .eq('user_id', session.user.id);
 
       state = const AsyncData(null);
     } catch (e, st) {
@@ -116,9 +113,9 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
     required String facilityId,
     required List<String> currentFacilityIds,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
@@ -131,7 +128,7 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
           .from('onsen_plans')
           .update({'facility_ids': newIds})
           .eq('id', planId)
-          .eq('user_id', userId);
+          .eq('user_id', session.user.id);
 
       state = const AsyncData(null);
     } catch (e, st) {
@@ -146,9 +143,9 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
     required String planId,
     required List<String> newFacilityIds,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
@@ -158,7 +155,7 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
           .from('onsen_plans')
           .update({'facility_ids': newFacilityIds})
           .eq('id', planId)
-          .eq('user_id', userId);
+          .eq('user_id', session.user.id);
 
       state = const AsyncData(null);
     } catch (e, st) {
@@ -168,9 +165,9 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// プランを完全に削除する
   Future<void> deletePlan(String planId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
@@ -181,7 +178,7 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
           .from('onsen_plans')
           .delete()
           .eq('id', planId)
-          .eq('user_id', userId);
+          .eq('user_id', session.user.id);
 
       state = const AsyncData(null);
     } catch (e, st) {
@@ -191,8 +188,4 @@ class PlanNotifier extends StateNotifier<AsyncValue<void>> {
 }
 
 final planNotifierProvider =
-    StateNotifierProvider<PlanNotifier, AsyncValue<void>>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  final session = ref.watch(sessionProvider);
-  return PlanNotifier(client, session?.user.id);
-});
+    AsyncNotifierProvider<PlanNotifier, void>(PlanNotifier.new);

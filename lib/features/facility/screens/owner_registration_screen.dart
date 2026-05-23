@@ -185,7 +185,7 @@ class _OwnerRegistrationScreenState
               const SizedBox(height: 24),
 
               // ── 代表者名（必須）────────────────────────────────────────
-              _RequiredLabel(label: '代表者名（担当者名）'),
+              const _RequiredLabel(label: '代表者名（担当者名）'),
               const SizedBox(height: 6),
               TextFormField(
                 controller: _ownerNameCtrl,
@@ -204,7 +204,7 @@ class _OwnerRegistrationScreenState
               const SizedBox(height: 20),
 
               // ── メールアドレス（必須）──────────────────────────────────
-              _RequiredLabel(label: 'メールアドレス'),
+              const _RequiredLabel(label: 'メールアドレス'),
               const SizedBox(height: 4),
               Text(
                 '審査結果の通知先になります',

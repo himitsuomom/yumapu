@@ -1,0 +1,12 @@
+# gitleaks 設定ファイル
+# Firebase の API キーはセキュリティルールで保護するため、
+# ファイルに含めること自体は Firebase 公式の推奨事項です。
+# 参考: https://firebase.google.com/docs/projects/api-keys
+
+[allowlist]
+description = "Firebase / Google Services config files (intentionally public)"
+paths = [
+    "lib/firebase_options.dart",
+    "ios/Runner/GoogleService-Info.plist",
+    "android/app/google-services.json",
+]

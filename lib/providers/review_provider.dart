@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
@@ -36,7 +37,8 @@ final reviewCountProvider =
         .eq('facility_id', facilityId)
         .count(CountOption.exact);
     return response.count;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('reviewCountProvider error: $e\n$st');
     return 0;
   }
 });
@@ -56,8 +58,9 @@ final facilityAvgRatingProvider =
         .rpc('get_facility_avg_rating', params: {'p_facility_id': facilityId});
     if (result == null) return 0.0;
     return double.tryParse(result.toString()) ?? 0.0;
-  } catch (_) {
+  } catch (e, st) {
     // RPC 未デプロイや一時エラーの場合は 0.0 を返してUIへの影響を最小化する
+    debugPrint('facilityAvgRatingProvider error: $e\n$st');
     return 0.0;
   }
 });
@@ -91,8 +94,9 @@ final facilityReviewSummaryProvider =
         ? 0.0
         : double.tryParse(map['avg_rating'].toString()) ?? 0.0;
     return (count: count, avgRating: avg);
-  } catch (_) {
+  } catch (e, st) {
     // RPC未デプロイや一時エラーの場合: 既存プロバイダーにフォールバック
+    debugPrint('facilityReviewSummaryProvider RPC failed, falling back: $e\n$st');
     try {
       final countResult = await client
           .from('reviews')
@@ -108,7 +112,8 @@ final facilityReviewSummaryProvider =
         avg = avgResult == null ? 0.0 : (double.tryParse(avgResult.toString()) ?? 0.0);
       }
       return (count: count, avgRating: avg);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('facilityReviewSummaryProvider fallback error: $e\n$st');
       return (count: 0, avgRating: 0.0);
     }
   }
@@ -135,30 +140,30 @@ final myReviewForFacilityProvider =
         .limit(1) as List;
     if (rows.isEmpty) return null;
     return Review.fromJson(rows.first as Map<String, dynamic>);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('myReviewForFacilityProvider error: $e\n$st');
     return null;
   }
 });
 
 // ── Review actions ───────────────────────────────────────────────────────────
 
-class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
-  ReviewNotifier(this._client, this._userId) : super(const AsyncData(null));
-
-  final SupabaseClient? _client;
-  final String? _userId;
+class ReviewNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
 
   Future<void> postReview({
     required String facilityId,
     required String content,
     required int rating,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
+    final userId = session.user.id;
     state = const AsyncLoading();
     try {
       // 重複レビューの事前チェック（DB の UNIQUE 制約の前に確認してユーザーに分かりやすいエラーを返す）
@@ -206,12 +211,13 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
     required String content,
     required int rating,
   }) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) {
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) {
       state = AsyncError('ログインが必要です', StackTrace.current);
       return;
     }
+    final userId = session.user.id;
     state = const AsyncLoading();
     try {
       await client
@@ -229,9 +235,10 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> deleteReview(String reviewId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
+    final userId = session.user.id;
     state = const AsyncLoading();
     try {
       await client
@@ -247,42 +254,40 @@ class ReviewNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Inserts a like for [reviewId]. Silently ignores duplicate-like errors.
   Future<void> likeReview(String reviewId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
     try {
       await client.from('review_likes').insert({
         'review_id': reviewId,
-        'user_id': userId,
+        'user_id': session.user.id,
       });
-    } catch (_) {
+    } catch (e, st) {
       // Already liked or network error — no state change needed
+      debugPrint('ReviewNotifier.likeReview failed: $e\n$st');
     }
   }
 
   /// Removes a like for [reviewId]. Silently ignores not-found errors.
   Future<void> unlikeReview(String reviewId) async {
-    final client = _client;
-    final userId = _userId;
-    if (client == null || userId == null) return;
+    final client = ref.read(supabaseClientProvider);
+    final session = ref.read(sessionProvider);
+    if (client == null || session == null) return;
     try {
       await client
           .from('review_likes')
           .delete()
           .eq('review_id', reviewId)
-          .eq('user_id', userId);
-    } catch (_) {
+          .eq('user_id', session.user.id);
+    } catch (e, st) {
       // Not liked or network error — no state change needed
+      debugPrint('ReviewNotifier.unlikeReview failed: $e\n$st');
     }
   }
 }
 
 final reviewNotifierProvider =
-    StateNotifierProvider<ReviewNotifier, AsyncValue<void>>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  final session = ref.watch(sessionProvider);
-  return ReviewNotifier(client, session?.user.id);
-});
+    AsyncNotifierProvider<ReviewNotifier, void>(ReviewNotifier.new);
 
 /// ログイン中ユーザーがいいねしたレビューID一覧。
 ///
@@ -303,7 +308,8 @@ final likedReviewIdsProvider =
         .eq('user_id', session.user.id)
         .eq('reviews.facility_id', facilityId) as List;
     return rows.map((r) => r['review_id'] as String).toSet();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('likedReviewIdsProvider error: $e\n$st');
     return {};
   }
 });

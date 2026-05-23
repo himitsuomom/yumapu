@@ -55,7 +55,7 @@ class _PlanMapSection extends StatelessWidget {
 
   ({ll.LatLng center, double zoom}) _computeBounds() {
     if (facilities.isEmpty) {
-      return (center: ll.LatLng(35.6812, 139.7671), zoom: 10.0);
+      return (center: const ll.LatLng(35.6812, 139.7671), zoom: 10.0);
     }
     if (facilities.length == 1) {
       return (

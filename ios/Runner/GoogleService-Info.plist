@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyCRw1WpjWe__i2nDA0xp5VWY0qCwNiouT4</string>
+	<key>GCM_SENDER_ID</key>
+	<string>830603349393</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.yumap.app</string>
+	<key>PROJECT_ID</key>
+	<string>yumap-bcb7e</string>
+	<key>STORAGE_BUCKET</key>
+	<string>yumap-bcb7e.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:830603349393:ios:f9a1d1bb363e76a9ec1e30</string>
+</dict>
+</plist>

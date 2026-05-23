@@ -195,7 +195,7 @@ class _BadgeTile extends StatelessWidget {
                 final msg = '湯マップで「${badge.nameJa}」バッジを獲得しました！\n'
                     '${badge.descriptionJa != null && badge.descriptionJa!.isNotEmpty ? badge.descriptionJa! : badge.requirementText}\n'
                     '#湯マップ #温泉 #サウナ';
-                Share.share(msg);
+                SharePlus.instance.share(ShareParams(text: msg));
               },
             ),
           TextButton(

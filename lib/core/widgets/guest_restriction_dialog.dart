@@ -89,12 +89,12 @@ class GuestRestrictionDialog extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           // 機能リスト
-          _FeatureRow(
+          const _FeatureRow(
             icon: Icons.favorite,
             color: Colors.redAccent,
             label: 'お気に入り施設を保存',
           ),
-          _FeatureRow(
+          const _FeatureRow(
             icon: Icons.where_to_vote,
             color: Colors.teal,
             label: 'チェックインでバッジを獲得',
@@ -104,7 +104,7 @@ class GuestRestrictionDialog extends StatelessWidget {
             color: Colors.amber[700]!,
             label: 'クチコミを投稿・編集',
           ),
-          _FeatureRow(
+          const _FeatureRow(
             icon: Icons.leaderboard,
             color: Colors.indigo,
             label: 'ランキングに参加',

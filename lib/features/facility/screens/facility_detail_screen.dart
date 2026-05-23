@@ -189,7 +189,7 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
   void _shareFacility(Facility facility) {
     final url = '${AppConstants.deepLinkBaseUrl}/facility/${facility.id}';
     final text = '${facility.displayName}\n$url';
-    Share.share(text, subject: '湯マップ — ${facility.displayName}');
+    SharePlus.instance.share(ShareParams(text: text, subject: '湯マップ — ${facility.displayName}'));
   }
 
   // ── 地図タブへ遷移 ────────────────────────────────────────────────────────

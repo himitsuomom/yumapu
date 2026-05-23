@@ -110,8 +110,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               final authState = ref.read(authNotifierProvider);
               if (authState is AsyncError) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('送信に失敗しました。メールアドレスをご確認ください。'),
+                  const SnackBar(
+                    content: Text('送信に失敗しました。メールアドレスをご確認ください。'),
                     backgroundColor: Colors.red,
                   ),
                 );

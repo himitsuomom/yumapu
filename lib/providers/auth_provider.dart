@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/core/config/app_config.dart';
@@ -53,26 +54,27 @@ final currentUserProfileProvider =
         .maybeSingle();
     if (data == null) return null;
     return app.User.fromJson(data);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('currentUserProfileProvider error: $e\n$st');
     return null;
   }
 });
 
 // ── Auth actions ────────────────────────────────────────────────────
 
-class AuthNotifier extends StateNotifier<AsyncValue<void>> {
-  AuthNotifier(this._client) : super(const AsyncData(null));
-
-  final SupabaseClient? _client;
+class AuthNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
 
   Future<void> signInWithEmail(String email, String password) async {
-    if (_client == null) {
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) {
       state = AsyncError('Supabase is not configured.', StackTrace.current);
       return;
     }
     state = const AsyncLoading();
     try {
-      await _client.auth.signInWithPassword(email: email, password: password);
+      await client.auth.signInWithPassword(email: email, password: password);
       AnalyticsService.instance.logLogin();
       NotificationService.instance.registerToken().ignore();
       // ログイン後に通知許可を遅延リクエスト。
@@ -87,13 +89,14 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> signUpWithEmail(String email, String password) async {
-    if (_client == null) {
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) {
       state = AsyncError('Supabase is not configured.', StackTrace.current);
       return;
     }
     state = const AsyncLoading();
     try {
-      await _client.auth.signUp(email: email, password: password);
+      await client.auth.signUp(email: email, password: password);
       AnalyticsService.instance.logSignUp();
       state = const AsyncData(null);
     } catch (e, st) {
@@ -102,11 +105,12 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> signOut() async {
-    if (_client == null) return;
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) return;
     state = const AsyncLoading();
     try {
       await NotificationService.instance.removeToken();
-      await _client.auth.signOut();
+      await client.auth.signOut();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -114,13 +118,14 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> resetPassword(String email) async {
-    if (_client == null) {
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) {
       state = AsyncError('Supabase is not configured.', StackTrace.current);
       return;
     }
     state = const AsyncLoading();
     try {
-      await _client.auth.resetPasswordForEmail(email);
+      await client.auth.resetPasswordForEmail(email);
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -133,17 +138,18 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
   /// auth.users から削除し、ON DELETE CASCADE で全関連テーブルを連鎖削除する。
   /// 削除後はセッションをクリアして未ログイン状態に戻す。
   Future<void> deleteAccount() async {
-    if (_client == null) {
+    final client = ref.read(supabaseClientProvider);
+    if (client == null) {
       state = AsyncError('Supabase is not configured.', StackTrace.current);
       return;
     }
     state = const AsyncLoading();
     try {
       // DB 上のすべてのユーザーデータを削除（RPC が auth.users から CASCADE 削除）
-      await _client.rpc('delete_user_account');
+      await client.rpc('delete_user_account');
       // セッションをクリアしてログアウト状態にする
       // （auth.users 削除後はセッショントークンが無効になるため、クライアント側も解除）
-      await _client.auth.signOut();
+      await client.auth.signOut();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -152,9 +158,7 @@ class AuthNotifier extends StateNotifier<AsyncValue<void>> {
 }
 
 final authNotifierProvider =
-    StateNotifierProvider<AuthNotifier, AsyncValue<void>>((ref) {
-  return AuthNotifier(ref.read(supabaseClientProvider));
-});
+    AsyncNotifierProvider<AuthNotifier, void>(AuthNotifier.new);
 
 // ── 管理者・オーナー権限チェック ──────────────────────────────────────────────
 
@@ -172,7 +176,8 @@ final isAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
         .eq('id', session.user.id)
         .maybeSingle();
     return (data?['is_admin'] as bool?) ?? false;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('isAdminProvider error: $e\n$st');
     return false;
   }
 });
@@ -194,7 +199,8 @@ final isApprovedOwnerProvider =
         .eq('status', 'approved')
         .maybeSingle();
     return data != null;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('isApprovedOwnerProvider error: $e\n$st');
     return false;
   }
 });

@@ -227,7 +227,8 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
     // https://yumap.app/facility/{id} → pathSegments = ['facility', '{id}']
     if (segments.length >= 2 && segments[0] == 'facility') {
       final facilityId = segments[1];
-      if (facilityId.isNotEmpty && mounted) {
+      // UUID または英数字ハイフン形式のみ許可（インジェクション・不正IDを防ぐ）
+      if (_isValidFacilityId(facilityId) && mounted) {
         // Navigator がスタックに積まれていることを前提に pushNamed する。
         // まだ HomeShell が表示される前（_onboardingCompleted == null）の場合は
         // 少し待ってから再実行する。
@@ -238,6 +239,11 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         });
       }
     }
+  }
+
+  static bool _isValidFacilityId(String id) {
+    if (id.isEmpty || id.length > 64) return false;
+    return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(id);
   }
 
   @override
@@ -301,21 +307,32 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
   /// Bug-V9-4対応: ゲストモードを flutter_secure_storage で永続化する。
   /// アプリ再起動後も「ゲストとして閲覧」を選んだ状態を維持できる。
   Future<void> _initStorage() async {
-    // 2つのストレージ読み込みを並行実行して待ち時間を最小化する
-    final results = await Future.wait<bool>([
-      isOnboardingCompleted(),
-      _storage.read(key: _guestModeKey).then((v) => v == 'true'),
-    ]);
-    if (!mounted) return;
+    try {
+      // Keychain読み込みに最大3秒のタイムアウトを設定する。
+      // iOS Simulator では初回起動時に Keychain アクセスが詰まることがある。
+      final results = await Future.wait<bool>([
+        isOnboardingCompleted()
+            .timeout(const Duration(seconds: 3), onTimeout: () => false),
+        _storage
+            .read(key: _guestModeKey)
+            .timeout(const Duration(seconds: 3), onTimeout: () => null)
+            .then((v) => v == 'true'),
+      ]);
+      if (!mounted) return;
 
-    final onboardingDone = results[0];
-    final guestMode = results[1];
+      final onboardingDone = results[0];
+      final guestMode = results[1];
 
-    // ゲストモードが保存されていればプロバイダーに反映する
-    if (guestMode) {
-      ref.read(guestModeProvider.notifier).state = true;
+      if (guestMode) {
+        ref.read(guestModeProvider.notifier).state = true;
+      }
+      setState(() => _onboardingCompleted = onboardingDone);
+    } catch (_) {
+      // Keychain アクセス失敗時はオンボーディング未完了として扱う。
+      // ユーザーはオンボーディング完了後に正常なフローに入る。
+      if (!mounted) return;
+      setState(() => _onboardingCompleted = false);
     }
-    setState(() => _onboardingCompleted = onboardingDone);
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/providers/auth_provider.dart';
@@ -330,7 +331,8 @@ final facilityAmenitiesProvider =
         .map((r) => FacilityAmenity.fromJson(r as Map<String, dynamic>))
         .where((a) => a.nameJa.isNotEmpty)
         .toList();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('facilityAmenitiesProvider error: $e\n$st');
     return [];
   }
 });
@@ -367,7 +369,8 @@ final trendingFacilitiesProvider = FutureProvider<List<Facility>>((ref) async {
     return fallbackRows
         .map((r) => Facility.fromJson(r as Map<String, dynamic>))
         .toList();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('trendingFacilitiesProvider error: $e\n$st');
     return [];
   }
 });
@@ -396,7 +399,8 @@ final facilityPhotosProvider =
         if (path == null || path.isEmpty) return '';
         return client.storage.from('photos').getPublicUrl(path);
       }).where((url) => url.isNotEmpty).toList();
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('facilityPhotosProvider error: $e\n$st');
       return [];
     }
   },
