@@ -1,0 +1,23 @@
+{
+  "name": "yumap-agents",
+  "version": "1.0.0",
+  "description": "YuMap 情報収集エージェント部隊 — OAuth動作・コストゼロ",
+  "type": "module",
+  "scripts": {
+    "scout": "npx tsx scout/index.ts",
+    "commander": "npx tsx commander/index.ts",
+    "test:scout": "npx tsx scout/test.ts",
+    "test:phase3": "npx tsx scout/test.ts --facilities 3"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "playwright": "^1.44.0",
+    "dotenv": "^16.4.5",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.11.0",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5"
+  }
+}
