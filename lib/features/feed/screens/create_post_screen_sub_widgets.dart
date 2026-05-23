@@ -287,55 +287,6 @@ class _ImagePickerButton extends StatelessWidget {
   }
 }
 
-// ── 画像選択済みプレビュー ──────────────────────────────────────────────────────
-
-class _ImagePreview extends StatelessWidget {
-  const _ImagePreview({
-    required this.imageFile,
-    required this.onRemove,
-    required this.onReplace,
-  });
-
-  final XFile imageFile;
-  final VoidCallback onRemove;
-  final VoidCallback onReplace;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            File(imageFile.path),
-            width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-          ),
-        ),
-        Positioned(
-          top: 8,
-          right: 8,
-          child: Row(
-            children: [
-              _OverlayIconButton(
-                icon: Icons.edit,
-                tooltip: '画像を変更',
-                onTap: onReplace,
-              ),
-              const SizedBox(width: 6),
-              _OverlayIconButton(
-                icon: Icons.close,
-                tooltip: '画像を削除',
-                onTap: onRemove,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _OverlayIconButton extends StatelessWidget {
   const _OverlayIconButton({

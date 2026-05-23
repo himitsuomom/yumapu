@@ -55,7 +55,7 @@ class FacilityListTile extends ConsumerWidget {
                       size: 13, color: Color(0xFF2E7D32)),
                   const SizedBox(width: 3),
                   Text(
-                    '今週${weeklyCheckinCount}人がチェックイン',
+                    '今週$weeklyCheckinCount人がチェックイン',
                     style: const TextStyle(
                       fontSize: 11,
                       color: Color(0xFF2E7D32),
