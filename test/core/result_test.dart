@@ -34,7 +34,7 @@ void main() {
     });
 
     test('pattern matching on Success extracts data', () {
-      const result = Success<int>(42);
+      final Result<int> result = const Success<int>(42);
       final value = switch (result) {
         Success(:final data) => data,
         Failure() => -1,
@@ -43,7 +43,7 @@ void main() {
     });
 
     test('pattern matching on Failure extracts exception', () {
-      final result = Failure<int>(
+      final Result<int> result = Failure<int>(
         const NotFoundException('item not found'),
       );
       final error = switch (result) {

@@ -113,8 +113,9 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
     var query = client
         .from('posts')
         .select('*, users(display_name, username, avatar_url)');
-    if (_facilityIdFilter != null) {
-      query = query.eq('facility_id', _facilityIdFilter);
+    final facilityIdFilter = _facilityIdFilter;
+    if (facilityIdFilter != null) {
+      query = query.eq('facility_id', facilityIdFilter);
     }
     final data = await query
         .order('created_at', ascending: false)
