@@ -375,6 +375,30 @@ final trendingFacilitiesProvider = FutureProvider<List<Facility>>((ref) async {
   }
 });
 
+/// 施設IDリスト（カンマ区切りソート済み文字列）に対して
+/// 過去7日間のチェックイン数を一括取得するプロバイダー。
+/// キーは `facilityIds.sorted().join(',')` の形式で渡すこと。
+final weeklyCheckinCountsProvider = FutureProvider.autoDispose
+    .family<Map<String, int>, String>((ref, joinedIds) async {
+  if (joinedIds.isEmpty) return {};
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return {};
+  final facilityIds = joinedIds.split(',');
+  final oneWeekAgo =
+      DateTime.now().toUtc().subtract(const Duration(days: 7));
+  final rows = await client
+      .from('visits')
+      .select('facility_id')
+      .inFilter('facility_id', facilityIds)
+      .gte('visited_at', oneWeekAgo.toIso8601String()) as List;
+  final counts = <String, int>{};
+  for (final row in rows) {
+    final id = row['facility_id'] as String;
+    counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
+});
+
 /// 施設の写真 URL リスト（最新5枚）を取得する共有プロバイダー。
 ///
 /// facility_preview_sheet と facility_detail_screen の両方で使う。

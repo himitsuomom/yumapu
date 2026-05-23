@@ -287,55 +287,6 @@ class _ImagePickerButton extends StatelessWidget {
   }
 }
 
-// ── 画像選択済みプレビュー ──────────────────────────────────────────────────────
-
-class _ImagePreview extends StatelessWidget {
-  const _ImagePreview({
-    required this.imageFile,
-    required this.onRemove,
-    required this.onReplace,
-  });
-
-  final XFile imageFile;
-  final VoidCallback onRemove;
-  final VoidCallback onReplace;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            File(imageFile.path),
-            width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-          ),
-        ),
-        Positioned(
-          top: 8,
-          right: 8,
-          child: Row(
-            children: [
-              _OverlayIconButton(
-                icon: Icons.edit,
-                tooltip: '画像を変更',
-                onTap: onReplace,
-              ),
-              const SizedBox(width: 6),
-              _OverlayIconButton(
-                icon: Icons.close,
-                tooltip: '画像を削除',
-                onTap: onRemove,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _OverlayIconButton extends StatelessWidget {
   const _OverlayIconButton({
@@ -364,6 +315,108 @@ class _OverlayIconButton extends StatelessWidget {
           child: Icon(icon, size: 18, color: Colors.white),
         ),
       ),
+    );
+  }
+}
+
+// ── 複数画像グリッド ──────────────────────────────────────────────────────────
+
+class _MultiImageGrid extends StatelessWidget {
+  const _MultiImageGrid({
+    required this.images,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<XFile> images;
+  final VoidCallback? onAdd;
+  final void Function(int index) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    // 画像なし: 追加ボタンのみ
+    if (images.isEmpty) {
+      return _ImagePickerButton(onTap: onAdd ?? () {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // グリッド表示
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 6,
+            mainAxisSpacing: 6,
+            childAspectRatio: 1,
+          ),
+          itemCount: images.length + (onAdd != null ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == images.length) {
+              // 追加ボタン
+              return InkWell(
+                onTap: onAdd,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(8),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withAlpha(77),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_photo_alternate_outlined,
+                          size: 28,
+                          color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(height: 4),
+                      Text('追加',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color:
+                                  Theme.of(context).colorScheme.primary)),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                    File(images[index].path),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: _OverlayIconButton(
+                    icon: Icons.close,
+                    tooltip: '削除',
+                    onTap: () => onRemove(index),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${images.length}/4枚',
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurface.withAlpha(150),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -3,6 +3,8 @@
 // 投稿フィード機能のデータ管理
 // posts テーブルと users テーブルを JOIN し、いいね済み状態も取得する
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -471,27 +473,57 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
     }
   }
 
-  /// 新規投稿作成
+  /// 新規投稿作成（複数画像対応）
   Future<void> createPost({
     required String content,
     String? facilityId,
     String facilityName = '',
-    String? imageUrl,
+    List<File> images = const [],
   }) async {
     final client = ref.read(supabaseClientProvider);
     final session = ref.read(sessionProvider);
     if (client == null || session == null) return;
+
+    // 画像をアップロード
+    final uploadedUrls = <String>[];
+    for (final image in images) {
+      final url = await _uploadImageFile(image, session.user.id, client);
+      uploadedUrls.add(url);
+    }
+
+    final firstUrl = uploadedUrls.isNotEmpty ? uploadedUrls.first : null;
 
     await client.from('posts').insert({
       'user_id': session.user.id,
       'content': content,
       if (facilityId != null) 'facility_id': facilityId,
       'facility_name': facilityName,
-      if (imageUrl != null && imageUrl.isNotEmpty) 'image_url': imageUrl,
+      if (firstUrl != null && firstUrl.isNotEmpty) 'image_url': firstUrl,
+      if (uploadedUrls.isNotEmpty) 'image_urls': uploadedUrls,
     });
 
     // 投稿後に再取得して最新状態を反映
     await load();
+  }
+
+  /// File オブジェクトを Supabase Storage にアップロードして公開URLを返す。
+  Future<String> _uploadImageFile(
+      File image, String userId, SupabaseClient client) async {
+    final rawExt = image.path.split('.').last.toLowerCase();
+    final safeExt =
+        ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt) ? rawExt : 'jpg';
+    final fileName = '${const Uuid().v4()}.$safeExt';
+    final storagePath = '$userId/$fileName';
+    final bytes = await image.readAsBytes();
+    await client.storage.from('post-images').uploadBinary(
+          storagePath,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: 'image/$safeExt',
+            upsert: false,
+          ),
+        );
+    return client.storage.from('post-images').getPublicUrl(storagePath);
   }
 }
 

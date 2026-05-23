@@ -24,6 +24,7 @@ import 'package:yu_map/providers/facility_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/providers/review_provider.dart';
 import 'package:yu_map/providers/navigation_provider.dart';
+import 'package:yu_map/features/feed/screens/create_post_screen.dart';
 import 'package:yu_map/services/analytics_service.dart';
 import 'package:yu_map/services/checkin_service.dart';
 import 'package:yu_map/services/review_service.dart';
@@ -220,6 +221,17 @@ class _FacilityDetailScreenState extends ConsumerState<FacilityDetailScreen> {
       facility: facility,
       setCheckingIn: (v) {
         if (mounted) setState(() => _isCheckingIn = v);
+      },
+      onPostAfterCheckin: () {
+        if (!context.mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => CreatePostScreen(
+              initialFacilityId: facility.id,
+              initialFacilityName: facility.name,
+            ),
+          ),
+        );
       },
     );
   }

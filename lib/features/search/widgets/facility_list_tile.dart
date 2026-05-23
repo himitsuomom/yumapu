@@ -12,10 +12,12 @@ class FacilityListTile extends ConsumerWidget {
     super.key,
     required this.facility,
     this.onTap,
+    this.weeklyCheckinCount,
   });
 
   final Facility facility;
   final VoidCallback? onTap;
+  final int? weeklyCheckinCount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,6 +45,26 @@ class FacilityListTile extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (weeklyCheckinCount != null && weeklyCheckinCount! > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people_outline,
+                      size: 13, color: Color(0xFF2E7D32)),
+                  const SizedBox(width: 3),
+                  Text(
+                    '今週$weeklyCheckinCount人がチェックイン',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF2E7D32),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // 施設タイプ（例: 温泉施設、銭湯・公衆浴場）
           if (facility.hasFacilityType)
             Text(
@@ -87,8 +109,9 @@ class FacilityListTile extends ConsumerWidget {
             ref.read(favoritesProvider.notifier).toggle(facility.id),
       ),
       isThreeLine:
-          facility.hasFacilityType &&
-          (facility.address != null || distKm != null),
+          weeklyCheckinCount != null && weeklyCheckinCount! > 0 ||
+          (facility.hasFacilityType &&
+          (facility.address != null || distKm != null)),
     );
   }
 }

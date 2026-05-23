@@ -19,7 +19,14 @@ import 'package:yu_map/services/facility_service.dart';
 part 'create_post_screen_sub_widgets.dart';
 
 class CreatePostScreen extends ConsumerStatefulWidget {
-  const CreatePostScreen({super.key});
+  const CreatePostScreen({
+    super.key,
+    this.initialFacilityId,
+    this.initialFacilityName,
+  });
+
+  final String? initialFacilityId;
+  final String? initialFacilityName;
 
   @override
   ConsumerState<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -30,11 +37,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _contentController = TextEditingController();
   final _imagePicker = ImagePicker();
 
-  XFile? _pickedImage;
+  final List<XFile> _pickedImages = [];
   bool _isSubmitting = false;
 
   String? _selectedFacilityId;
   String _selectedFacilityName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialFacilityId != null) {
+      _selectedFacilityId = widget.initialFacilityId;
+      _selectedFacilityName = widget.initialFacilityName ?? '';
+    }
+  }
 
   @override
   void dispose() {
@@ -43,6 +59,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Future<void> _pickImage() async {
+    if (_pickedImages.length >= 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('画像は最大4枚まで追加できます')),
+      );
+      return;
+    }
     final source = await _showImageSourceDialog();
     if (source == null) return;
 
@@ -53,8 +75,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       imageQuality: 80,
     );
     if (picked != null) {
-      setState(() => _pickedImage = picked);
+      setState(() => _pickedImages.add(picked));
     }
+  }
+
+  void _removeImage(int index) {
+    setState(() => _pickedImages.removeAt(index));
   }
 
   Future<ImageSource?> _showImageSourceDialog() async {
@@ -78,10 +104,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         ),
       ),
     );
-  }
-
-  void _removeImage() {
-    setState(() => _pickedImage = null);
   }
 
   Future<void> _openFacilityPicker() async {
@@ -134,19 +156,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      String? imageUrl;
-
-      if (_pickedImage != null) {
-        imageUrl = await ref
-            .read(postFeedProvider.notifier)
-            .uploadPostImage(_pickedImage!);
-      }
-
+      final imageFiles = _pickedImages.map((x) => File(x.path)).toList();
       await ref.read(postFeedProvider.notifier).createPost(
             content: _contentController.text.trim(),
             facilityId: _selectedFacilityId,
             facilityName: _selectedFacilityName,
-            imageUrl: imageUrl,
+            images: imageFiles,
           );
 
       if (mounted) {
@@ -250,13 +265,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               ),
             const SizedBox(height: 16),
 
-            _pickedImage == null
-                ? _ImagePickerButton(onTap: _pickImage)
-                : _ImagePreview(
-                    imageFile: _pickedImage!,
-                    onRemove: _removeImage,
-                    onReplace: _pickImage,
-                  ),
+            _MultiImageGrid(
+              images: _pickedImages,
+              onAdd: _pickedImages.length < 4 ? _pickImage : null,
+              onRemove: _removeImage,
+            ),
             const SizedBox(height: 16),
 
             Text(

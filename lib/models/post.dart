@@ -63,6 +63,8 @@ class Post {
   final String facilityId;
   final String facilityName;
   final String imageUrl;
+  /// 複数画像のURL配列（image_url との後方互換のため imageUrl も維持）
+  final List<String> imageUrls;
   final List<Comment> comments;
   /// DB の posts.comments_count から取得するコメント件数。
   /// フィード一覧でコメント数を表示するための非正規化カラム。
@@ -80,6 +82,7 @@ class Post {
     required this.facilityId,
     required this.facilityName,
     required this.imageUrl,
+    this.imageUrls = const [],
     required this.comments,
     this.commentsCount = 0,
   });
@@ -108,12 +111,24 @@ class Post {
       facilityId: json['facility_id'] as String? ?? '',
       facilityName: json['facility_name'] as String? ?? '',
       imageUrl: json['image_url'] as String? ?? '',
+      imageUrls: (json['image_urls'] as List<dynamic>?)
+              ?.whereType<String>()
+              .where((s) => s.isNotEmpty)
+              .toList() ??
+          const [],
       comments: (json['comments'] as List?)
               ?.map((c) => Comment.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [],
       commentsCount: (json['comments_count'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  /// 表示用画像URL一覧。image_urls 優先、なければ image_url にフォールバック。
+  List<String> get allImageUrls {
+    if (imageUrls.isNotEmpty) return imageUrls;
+    if (imageUrl.isNotEmpty) return [imageUrl];
+    return const [];
   }
 
   /// フィールドを一部だけ変えた新しい Post を返す。
@@ -127,6 +142,7 @@ class Post {
     bool? isLiked,
     int? commentsCount,
     String? content,
+    List<String>? imageUrls,
   }) {
     return Post(
       id: id,
@@ -140,6 +156,7 @@ class Post {
       facilityId: facilityId,
       facilityName: facilityName,
       imageUrl: imageUrl,
+      imageUrls: imageUrls ?? this.imageUrls,
       comments: comments,
       commentsCount: commentsCount ?? this.commentsCount,
     );

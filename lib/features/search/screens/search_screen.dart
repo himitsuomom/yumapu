@@ -60,6 +60,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// 「もっと見る」読み込み中フラグ（二重タップ防止）。
   bool _isLoadingMore = false;
 
+  /// 表示中施設の過去7日間チェックイン数（weeklyCheckinCountsProvider の最新値）。
+  /// build() で更新し、_buildResultList() 内で参照する。
+  Map<String, int> _checkinCounts = {};
+
   /// フィルター条件（ページ番号を除く）の識別キー。
   /// これが変わったら蓄積リストをリセットする。
   String _prevFilterKey = '';
@@ -254,6 +258,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final params = ref.watch(facilitySearchParamsProvider);
     final facilityAsync = ref.watch(facilityListProvider);
+
+    // 表示中施設のチェックイン数を一括取得（過去7日間）
+    final checkinKey = (_accumulatedFacilities.map((f) => f.id).toList()
+          ..sort())
+        .join(',');
+    _checkinCounts =
+        ref.watch(weeklyCheckinCountsProvider(checkinKey)).valueOrNull ?? {};
+
     final hasActiveFilters = params.searchQuery != null ||
         params.facilityTypeId != null ||
         params.amenityIds.isNotEmpty ||
@@ -328,7 +340,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Column(
         children: [
-          // ── Search field ─────────────────────────────────────────────────
+          // ── Search field ────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextField(
@@ -512,6 +524,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 Expanded(
                   child: FacilityListTile(
                     facility: facility,
+                    weeklyCheckinCount: _checkinCounts[facility.id],
                     onTap: () => Navigator.of(context).pushNamed(
                       '/facility',
                       arguments: facility.id,
