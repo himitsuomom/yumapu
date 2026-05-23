@@ -139,7 +139,7 @@ class SupabasePostRepository implements IPostRepository {
           imageUrls.add(url);
         }
 
-        final imageUrl = imageUrls.isNotEmpty ? imageUrls.first : null;
+        final firstImageUrl = imageUrls.isNotEmpty ? imageUrls.first : null;
 
         final result = await _client
             .from('posts')
@@ -147,8 +147,9 @@ class SupabasePostRepository implements IPostRepository {
               'user_id': session.user.id,
               'content': content,
               if (facilityId != null) 'facility_id': facilityId,
-              if (imageUrl != null && imageUrl.isNotEmpty)
-                'image_url': imageUrl,
+              if (firstImageUrl != null && firstImageUrl.isNotEmpty)
+                'image_url': firstImageUrl,
+              if (imageUrls.isNotEmpty) 'image_urls': imageUrls,
             })
             .select('*, users(display_name, username, avatar_url)')
             .single();
@@ -161,10 +162,10 @@ class SupabasePostRepository implements IPostRepository {
         final session = _client.auth.currentSession;
         if (session == null) throw const NotAuthenticatedException();
 
-        // Get post to check for image
+        // Get post to check for images (both single and multi)
         final row = await _client
             .from('posts')
-            .select('image_url')
+            .select('image_url, image_urls')
             .eq('id', postId)
             .eq('user_id', session.user.id)
             .maybeSingle();
@@ -175,10 +176,17 @@ class SupabasePostRepository implements IPostRepository {
             .eq('id', postId)
             .eq('user_id', session.user.id);
 
-        // Clean up storage image if present
+        // Clean up all storage images
         if (row != null) {
-          final imageUrl = row['image_url'] as String?;
-          if (imageUrl != null && imageUrl.isNotEmpty) {
+          final urls = <String>[];
+          final single = row['image_url'] as String?;
+          if (single != null && single.isNotEmpty) urls.add(single);
+          final multi =
+              (row['image_urls'] as List?)?.whereType<String>().toList() ?? [];
+          for (final u in multi) {
+            if (!urls.contains(u)) urls.add(u);
+          }
+          for (final imageUrl in urls) {
             try {
               final uri = Uri.tryParse(imageUrl);
               if (uri != null) {

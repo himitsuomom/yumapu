@@ -25,6 +25,7 @@ import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/core/widgets/photo_gallery_viewer.dart';
 import 'package:yu_map/domain/entities/review.dart';
+import 'package:yu_map/features/feed/screens/create_post_screen.dart';
 import 'package:yu_map/features/reviews/widgets/review_bottom_sheet.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/facility_provider.dart'
@@ -222,6 +223,17 @@ class _FacilityPreviewSheetState
       facility: widget.facility,
       setCheckingIn: (v) {
         if (mounted) setState(() => _isCheckingIn = v);
+      },
+      onPostAfterCheckin: () {
+        if (!context.mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => CreatePostScreen(
+              initialFacilityId: widget.facility.id,
+              initialFacilityName: widget.facility.name,
+            ),
+          ),
+        );
       },
     );
   }

@@ -284,18 +284,9 @@ class _PostCard extends ConsumerWidget {
           Text(post.content),
 
           // ── 画像 ────────────────────────────────────────────────────
-          if (post.imageUrl.isNotEmpty) ...[
+          if (post.allImageUrls.isNotEmpty) ...[
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                post.imageUrl,
-                width: double.infinity,
-                height: 200,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
+            _PostImagesPreview(images: post.allImageUrls),
           ],
 
           const SizedBox(height: 8),
@@ -410,6 +401,51 @@ class _PostAvatar extends StatelessWidget {
       radius: 20,
       backgroundColor: Color(0xFFE3F2FD),
       child: Icon(Icons.person, size: 20, color: Color(0xFF1565C0)),
+    );
+  }
+}
+
+// ── 投稿画像プレビュー（フィード一覧用） ─────────────────────────────────────
+
+class _PostImagesPreview extends StatelessWidget {
+  const _PostImagesPreview({required this.images});
+
+  final List<String> images;
+
+  @override
+  Widget build(BuildContext context) {
+    if (images.length == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          images.first,
+          width: double.infinity,
+          height: 200,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      );
+    }
+    // 複数: 2x2グリッド（最大4枚まで表示）
+    final displayImages = images.take(4).toList();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+          childAspectRatio: 1,
+        ),
+        itemCount: displayImages.length,
+        itemBuilder: (_, i) => Image.network(
+          displayImages[i],
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      ),
     );
   }
 }

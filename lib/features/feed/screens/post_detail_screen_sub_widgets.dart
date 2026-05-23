@@ -86,17 +86,9 @@ class _PostBody extends ConsumerWidget {
 
           Text(post.content, style: const TextStyle(fontSize: 15, height: 1.5)),
 
-          if (post.imageUrl.isNotEmpty) ...[
+          if (post.allImageUrls.isNotEmpty) ...[
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                post.imageUrl,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
-            ),
+            _PostDetailImages(images: post.allImageUrls),
           ],
 
           const SizedBox(height: 12),
@@ -304,6 +296,77 @@ class _CommentAvatar extends StatelessWidget {
       radius: 16,
       backgroundColor: Color(0xFFE3F2FD),
       child: Icon(Icons.person, size: 16, color: Color(0xFF1565C0)),
+    );
+  }
+}
+
+// ── 投稿画像詳細表示（ページビュー対応）─────────────────────────────────────
+
+class _PostDetailImages extends StatefulWidget {
+  const _PostDetailImages({required this.images});
+
+  final List<String> images;
+
+  @override
+  State<_PostDetailImages> createState() => _PostDetailImagesState();
+}
+
+class _PostDetailImagesState extends State<_PostDetailImages> {
+  int _currentPage = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.images.length == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          widget.images.first,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            height: 280,
+            child: PageView.builder(
+              itemCount: widget.images.length,
+              onPageChanged: (i) => setState(() => _currentPage = i),
+              itemBuilder: (_, i) => Image.network(
+                widget.images[i],
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(
+            widget.images.length,
+            (i) => AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: i == _currentPage ? 16 : 8,
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: i == _currentPage
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withAlpha(60),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

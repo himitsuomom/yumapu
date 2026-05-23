@@ -49,6 +49,7 @@ abstract final class CheckinService {
     required WidgetRef ref,
     required Facility facility,
     required void Function(bool) setCheckingIn,
+    VoidCallback? onPostAfterCheckin,
   }) async {
     // 1. ログイン確認
     final session = ref.read(sessionProvider);
@@ -149,7 +150,16 @@ abstract final class CheckinService {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('チェックインしました 🎉')),
+        SnackBar(
+          content: const Text('チェックインしました 🎉'),
+          action: onPostAfterCheckin != null
+              ? SnackBarAction(
+                  label: '投稿する',
+                  onPressed: onPostAfterCheckin,
+                )
+              : null,
+          duration: const Duration(seconds: 5),
+        ),
       );
 
       // Bug-52 修正: チェックイン後に統計・履歴プロバイダーを invalidate して
