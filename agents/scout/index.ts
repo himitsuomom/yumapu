@@ -43,11 +43,18 @@ async function findSubPages(page: import('playwright').Page, baseUrl: string): P
   return [...new Set(links)].slice(0, MAX_PAGES_PER_SITE - 1)
 }
 
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
 async function scoutFacility(
   facilityId: string,
-  siteUrl: string,
+  rawUrl: string,
   browser: import('playwright').Browser
 ): Promise<{ success: boolean; data?: object; error?: string }> {
+  const siteUrl = normalizeUrl(rawUrl)
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (compatible; YuMapBot/1.0; +https://yumap.app/bot)',
     extraHTTPHeaders: { 'Accept-Language': 'ja,en;q=0.9' },
@@ -125,19 +132,17 @@ async function scoutFacility(
     return { success: true, data: topData }
 
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 200)
     console.error(`  ❌ ${facilityId.slice(0, 8)} — ${msg}`)
 
-    await supabase
-      .from('crawl_schedule')
-      .update({
-        status:     'error',
-        last_error: msg,
-        error_count: supabase.rpc('increment', { row_id: facilityId }),
-      })
-      .eq('facility_id', facilityId)
+    try {
+      await supabase
+        .from('crawl_schedule')
+        .update({ status: 'error', last_error: msg })
+        .eq('facility_id', facilityId)
+    } catch { /* DB更新失敗は無視 */ }
 
-    await context.close()
+    try { await context.close() } catch { /* コンテキストクローズ失敗は無視 */ }
     return { success: false, error: msg }
   }
 }
@@ -175,8 +180,13 @@ async function runScoutBatch() {
       .update({ status: 'in_progress' })
       .eq('facility_id', row.facility_id)
 
-    const result = await scoutFacility(row.facility_id, row.official_site_url, browser)
-    result.success ? success++ : failed++
+    try {
+      const result = await scoutFacility(row.facility_id, row.official_site_url, browser)
+      result.success ? success++ : failed++
+    } catch (err: unknown) {
+      console.error(`  💥 ${row.facility_id.slice(0, 8)} — 予期しないエラー:`, err instanceof Error ? err.message.slice(0, 100) : String(err))
+      failed++
+    }
   }
 
   await browser.close()
