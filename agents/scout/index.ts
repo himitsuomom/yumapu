@@ -204,5 +204,6 @@ async function runScoutBatch() {
 }
 
 runScoutBatch()
-  .then(res => { if (res) console.log('\n✅ Scout Agent 終了'); process.exit(0) })
-  .catch(err => { console.error('Fatal:', err); process.exit(1) })
+  .then(res => { if (res) console.log('\n✅ Scout Agent 終了') })
+  .catch(err => { console.error('Scout 致命的エラー（処理は継続されました）:', err instanceof Error ? err.message : String(err)) })
+  .finally(() => process.exit(0))
