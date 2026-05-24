@@ -12,9 +12,11 @@
 
 import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
-import { execSync, exec } from 'child_process'
+import { exec } from 'child_process'
 import { promisify } from 'util'
-import { writeFileSync } from 'fs'
+import { chromium } from 'playwright'
+import { isAllowed, contentHash } from '../scout/utils/robots.ts'
+import { extractFromPage } from '../scout/extractors/official-site.ts'
 
 const execAsync = promisify(exec)
 
@@ -54,26 +56,109 @@ async function getNextBatch(limit: number) {
   return data ?? []
 }
 
-async function runScoutBatch(batch: Array<{ facility_id: string; official_site_url: string }>) {
-  console.log(`\n  🔍 Scout開始: ${batch.length}施設`)
+const REQUEST_DELAY = parseInt(process.env.REQUEST_DELAY ?? '3000')
+const SUB_PAGE_PATTERNS = ['/price', '/ryoukin', '/ryokin', '/fee', '/access', '/info', '/detail', '/facility', '/setubi']
 
-  // 施設IDリストをJSONファイルに書き出してScoutに渡す
-  const batchFile = '/tmp/yumap-scout-batch.json'
-  writeFileSync(batchFile, JSON.stringify(batch))
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim()
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
 
-  // Scout Agent を同期実行（Node.js プロセスとして直接呼ぶ）
+async function scoutOne(
+  facilityId: string,
+  rawUrl: string,
+  browser: import('playwright').Browser
+): Promise<boolean> {
+  const siteUrl = normalizeUrl(rawUrl)
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (compatible; YuMapBot/1.0; +https://yumap.app/bot)',
+    extraHTTPHeaders: { 'Accept-Language': 'ja,en;q=0.9' },
+  })
+  const page = await context.newPage()
+
   try {
-    const { stdout, stderr } = await execAsync(
-      `cd /Users/yangdaniel/Projects/yumap/app/agents && npx tsx scout/index.ts --batch-file ${batchFile}`,
-      { timeout: 300_000, env: { ...process.env } }
-    )
-    if (stdout) console.log(stdout.slice(0, 500))
-    if (stderr && !stderr.includes('ExperimentalWarning')) console.warn(stderr.slice(0, 200))
+    if (!(await isAllowed(siteUrl))) {
+      await context.close()
+      return false
+    }
+    await page.goto(siteUrl, { waitUntil: 'networkidle', timeout: 20000 })
+    await sleep(REQUEST_DELAY)
+
+    const topData = await extractFromPage(page, siteUrl)
+    const hash = contentHash(await page.content())
+
+    // サブページ探索
+    const subUrls = await page.evaluate((patterns) => {
+      return Array.from(document.querySelectorAll('a[href]'))
+        .map(a => { try { return (a as HTMLAnchorElement).href || '' } catch { return '' } })
+        .filter((href): href is string => typeof href === 'string' && patterns.some(p => href.includes(p)))
+        .slice(0, 4)
+    }, SUB_PAGE_PATTERNS).catch(() => [] as string[])
+
+    for (const subUrl of subUrls) {
+      try {
+        if (!(await isAllowed(subUrl))) continue
+        await page.goto(subUrl, { waitUntil: 'networkidle', timeout: 15000 })
+        await sleep(REQUEST_DELAY)
+        const sub = await extractFromPage(page, subUrl)
+        if (!topData.price_adult && sub.price_adult) topData.price_adult = sub.price_adult
+        if (!topData.hours     && sub.hours)         topData.hours = sub.hours
+        if (!topData.holiday   && sub.holiday)       topData.holiday = sub.holiday
+        if (!topData.phone     && sub.phone)         topData.phone = sub.phone
+        if (sub.amenities.length > topData.amenities.length) topData.amenities = sub.amenities
+      } catch { /* サブページ失敗は無視 */ }
+    }
+
+    topData.photos = [...new Set(topData.photos)].slice(0, 10)
+    const filledFields = [topData.price_adult, topData.hours, topData.holiday, topData.phone].filter(f => f !== null).length
+    topData.confidence = filledFields / 4
+
+    await supabase.from('raw_facility_data').insert({
+      facility_id: facilityId, source: 'official_site',
+      raw_json: { ...topData, scraped_url: siteUrl },
+      content_hash: hash, status: 'pending',
+    })
+    await supabase.from('crawl_schedule')
+      .update({ status: 'done', last_crawled_at: new Date().toISOString(), content_hash: hash, error_count: 0, last_error: null })
+      .eq('facility_id', facilityId)
+
+    console.log(`    ✅ ${facilityId.slice(0, 8)} — 信頼度:${Math.round(topData.confidence * 100)}% 料金:${topData.price_adult ?? 'null'}`)
+    try { await context.close() } catch { /* ignore */ }
     return true
+
   } catch (err: unknown) {
-    console.error('  Scout エラー:', err instanceof Error ? err.message.slice(0, 200) : String(err))
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 200)
+    console.log(`    ❌ ${facilityId.slice(0, 8)} — ${msg}`)
+    try { await supabase.from('crawl_schedule').update({ status: 'error', last_error: msg }).eq('facility_id', facilityId) } catch { /* ignore */ }
+    try { await context.close() } catch { /* ignore */ }
     return false
   }
+}
+
+async function runScoutBatch(batch: Array<{ facility_id: string; official_site_url: string }>) {
+  console.log(`\n  🔍 Scout開始: ${batch.length}施設`)
+  let browser = await chromium.launch({ headless: true })
+  let success = 0, failed = 0
+
+  for (const row of batch) {
+    if (!row.official_site_url) continue
+    if (!browser.isConnected()) {
+      try { await browser.close() } catch { /* ignore */ }
+      browser = await chromium.launch({ headless: true })
+    }
+    await supabase.from('crawl_schedule').update({ status: 'in_progress' }).eq('facility_id', row.facility_id)
+    try {
+      const ok = await scoutOne(row.facility_id, row.official_site_url, browser)
+      ok ? success++ : failed++
+    } catch (err: unknown) {
+      console.log(`    💥 ${row.facility_id.slice(0, 8)} — 予期しないエラー`)
+      failed++
+    }
+  }
+
+  try { await browser.close() } catch { /* ignore */ }
+  console.log(`\n  📊 Scout バッチ完了: ✅${success}件 / ❌${failed}件`)
+  return true
 }
 
 async function runVerification() {
