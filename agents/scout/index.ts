@@ -13,6 +13,15 @@ import { createHash } from 'crypto'
 import { isAllowed, contentHash } from './utils/robots.ts'
 import { extractFromPage } from './extractors/official-site.ts'
 
+// ブラウザクラッシュ時の Playwright 内部 unhandled rejection が
+// Node.js 15+ で exit(1) を引き起こすため、グローバルで抑制する
+process.on('unhandledRejection', (reason) => {
+  console.error('Scout: unhandled rejection (suppressed):', reason instanceof Error ? reason.message.slice(0, 100) : String(reason).slice(0, 100))
+})
+process.on('uncaughtException', (err) => {
+  console.error('Scout: uncaught exception (suppressed):', err.message.slice(0, 100))
+})
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_KEY!
