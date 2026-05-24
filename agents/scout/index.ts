@@ -167,11 +167,19 @@ async function runScoutBatch() {
 
   console.log(`📋 収集対象: ${schedule.length}件\n`)
 
-  const browser = await chromium.launch({ headless: true })
+  let browser = await chromium.launch({ headless: true })
   let success = 0, failed = 0
 
   for (const row of schedule) {
     if (!row.official_site_url) continue
+
+    // ブラウザ死活チェック → 再起動
+    if (!browser.isConnected()) {
+      console.log('  🔄 ブラウザ再起動...')
+      try { await browser.close() } catch { /* ignore */ }
+      browser = await chromium.launch({ headless: true })
+    }
+
     console.log(`\n→ ${row.official_site_url}`)
 
     // in_progress マーク
@@ -189,7 +197,7 @@ async function runScoutBatch() {
     }
   }
 
-  await browser.close()
+  try { await browser.close() } catch { /* ignore */ }
 
   console.log(`\n📊 Scout バッチ完了: ✅${success}件 / ❌${failed}件`)
   return { success, failed, total: schedule.length }
