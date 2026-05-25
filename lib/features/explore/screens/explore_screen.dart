@@ -448,6 +448,11 @@ class _FacilityListSheetState extends ConsumerState<_FacilityListSheet> {
       );
     }
     if (_accumulatedFacilities.isEmpty) {
+      // Data arrived but addPostFrameCallback setState hasn't fired yet —
+      // show loading briefly to avoid a one-frame flash of the empty state.
+      if (facilityAsync.valueOrNull?.isNotEmpty ?? false) {
+        return const LoadingWidget();
+      }
       // SingleChildScrollView prevents overflow when the sheet is short and
       // the EmptyWidget content (icon + text + optional TextButton) exceeds
       // the available Expanded height (e.g. with active filters at minChildSize).

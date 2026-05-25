@@ -476,6 +476,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
 
     if (_accumulatedFacilities.isEmpty) {
+      // Data arrived but addPostFrameCallback setState hasn't fired yet —
+      // show loading briefly to avoid a one-frame flash of the empty state.
+      if (facilityAsync.valueOrNull?.isNotEmpty ?? false) {
+        return const LoadingWidget();
+      }
       return EmptyWidget(
         icon: Icons.search_off,
         message: '施設が見つかりませんでした',

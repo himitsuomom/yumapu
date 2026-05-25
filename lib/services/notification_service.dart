@@ -288,17 +288,18 @@ class NotificationService {
   /// pendingTabSwitch 経由のタブ切り替えを使用する。
   /// タブに対応しない通知タイプ（badges等）は null を返す。
   ///
-  /// type: 'like' | 'comment' → tab 2（フィード）
-  /// type: 'follow'           → tab 4（プロフィール）
+  /// #9統合後のタブ構成: 0=探す / 1=ホーム(フィード) / 2=お気に入り / 3=プロフィール
+  /// type: 'like' | 'comment' → tab 1（ホーム/フィード）
+  /// type: 'follow'           → tab 3（プロフィール）
   /// それ以外                 → null（タブ切り替えなし）
   int? _tabIndexForData(Map<String, dynamic> data) {
     final type = data['type'] as String?;
     switch (type) {
       case 'like':
       case 'comment':
-        return 2; // フィードタブ
+        return 1; // ホーム/フィードタブ
       case 'follow':
-        return 4; // プロフィールタブ
+        return 3; // プロフィールタブ
       default:
         return null;
     }
