@@ -448,15 +448,20 @@ class _FacilityListSheetState extends ConsumerState<_FacilityListSheet> {
       );
     }
     if (_accumulatedFacilities.isEmpty) {
-      return EmptyWidget(
-        icon: Icons.search_off,
-        message: '施設が見つかりませんでした',
-        action: hasActiveFilters
-            ? TextButton(
-                onPressed: _clearFilters,
-                child: const Text('フィルターをクリア'),
-              )
-            : null,
+      // SingleChildScrollView prevents overflow when the sheet is short and
+      // the EmptyWidget content (icon + text + optional TextButton) exceeds
+      // the available Expanded height (e.g. with active filters at minChildSize).
+      return SingleChildScrollView(
+        child: EmptyWidget(
+          icon: Icons.search_off,
+          message: '施設が見つかりませんでした',
+          action: hasActiveFilters
+              ? TextButton(
+                  onPressed: _clearFilters,
+                  child: const Text('フィルターをクリア'),
+                )
+              : null,
+        ),
       );
     }
 
