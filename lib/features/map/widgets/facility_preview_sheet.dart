@@ -13,11 +13,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show FileOptions;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:uuid/uuid.dart';
+import 'package:yu_map/services/external_map_launcher.dart';
 import 'package:yu_map/core/config/app_config.dart';
 import 'package:yu_map/core/constants/app_constants.dart';
 import 'package:yu_map/core/utils/opening_hours_parser.dart';
@@ -58,152 +56,10 @@ class FacilityPreviewSheet extends ConsumerStatefulWidget {
 
 class _FacilityPreviewSheetState
     extends ConsumerState<FacilityPreviewSheet> {
-  bool _isUploadingPhoto = false;
   bool _isCheckingIn = false;
 
-  // ── 写真アップロード ───────────────────────────────────────────────────────
-
-  /// ギャラリーから写真を選択して Supabase Storage にアップロードし、
-  /// photos テーブルに記録する。
-  Future<void> _pickAndUploadPhoto() async {
-    final session = ref.read(sessionProvider);
-    if (session == null) {
-      if (!mounted) return;
-      final goLogin = await GuestRestrictionDialog.show(
-        context,
-        featureName: '写真投稿',
-      );
-      if (goLogin == true && mounted) {
-        Navigator.of(context).pushNamed('/login');
-      }
-      return;
-    }
-
-    if (_isUploadingPhoto) return;
-
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('カメラで撮影'),
-              onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('フォトライブラリから選択'),
-              onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (source == null || !mounted) return;
-
-    final picker = ImagePicker();
-    final XFile? picked = await picker.pickImage(
-      source: source,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 85,
-    );
-    if (picked == null || !mounted) return;
-
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('この写真を投稿しますか？'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.memory(
-                bytes,
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              widget.facility.displayName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'この施設の写真として公開されます',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('投稿する'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _isUploadingPhoto = true);
-
-    try {
-      final client = ref.read(supabaseClientProvider);
-      if (client == null) throw Exception('接続エラー');
-
-      final userId = session.user.id;
-      final facilityId = widget.facility.id;
-
-      final rawExt = picked.path.split('.').last.toLowerCase();
-      final safeExt =
-          ['jpg', 'jpeg', 'png', 'webp'].contains(rawExt) ? rawExt : 'jpg';
-      final fileName = '${const Uuid().v4()}.$safeExt';
-      final storagePath = 'facilities/$facilityId/$fileName';
-
-      await client.storage.from('photos').uploadBinary(
-            storagePath,
-            bytes,
-            fileOptions: FileOptions(
-              contentType: 'image/$safeExt',
-              upsert: false,
-            ),
-          );
-
-      await client.from('photos').insert({
-        'user_id': userId,
-        'facility_id': facilityId,
-        'storage_path': storagePath,
-      });
-
-      if (!mounted) return;
-
-      ref.invalidate(facilityPhotosProvider(facilityId));
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('写真を投稿しました')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('投稿に失敗しました: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isUploadingPhoto = false);
-    }
-  }
+  // FEATURE_DISABLED: photo upload
+  // Future<void> _pickAndUploadPhoto() async { ... }
 
   // ── シェア ────────────────────────────────────────────────────────────────
 
@@ -266,27 +122,19 @@ class _FacilityPreviewSheetState
                   loading: () => _PhotoPlaceholder(
                     isLoading: true,
                     typeColor: typeColor,
-                    isUploading: _isUploadingPhoto,
-                    onAddPhoto: _pickAndUploadPhoto,
                   ),
                   error: (_, __) => _PhotoPlaceholder(
                     isLoading: false,
                     typeColor: typeColor,
-                    isUploading: _isUploadingPhoto,
-                    onAddPhoto: _pickAndUploadPhoto,
                   ),
                   data: (urls) => urls.isEmpty
                       ? _PhotoPlaceholder(
                           isLoading: false,
                           typeColor: typeColor,
-                          isUploading: _isUploadingPhoto,
-                          onAddPhoto: _pickAndUploadPhoto,
                         )
                       : _PhotoCarousel(
                           urls: urls,
                           typeColor: typeColor,
-                          isUploading: _isUploadingPhoto,
-                          onAddPhoto: _pickAndUploadPhoto,
                         ),
                 ),
               ),

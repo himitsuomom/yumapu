@@ -5,6 +5,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:yu_map/models/post.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/post_provider.dart';
@@ -62,13 +63,21 @@ class CommentNotifier
         profile?.displayName ?? profile?.username ?? '匿名ユーザー';
     final userAvatar = profile?.avatarUrl ?? '';
 
-    await client.from('comments').insert({
-      'post_id': arg,
-      'user_id': session.user.id,
-      'user_name': userName,
-      'user_avatar': userAvatar,
-      'text': trimmed,
-    });
+    try {
+      await client.from('comments').insert({
+        'post_id': arg,
+        'user_id': session.user.id,
+        'user_name': userName,
+        'user_avatar': userAvatar,
+        'text': trimmed,
+      });
+    } on PostgrestException catch (e) {
+      debugPrint('CommentNotifier.addComment insert failed: $e');
+      rethrow;
+    } catch (e, st) {
+      debugPrint('CommentNotifier.addComment failed: $e\n$st');
+      rethrow;
+    }
 
     // 楽観的UI: 先にローカルリストへ新しいコメントを追加する
     // （load() を呼ぶと AsyncLoading → 一瞬リストが消える Bug-37 の対策）

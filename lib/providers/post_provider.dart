@@ -312,10 +312,21 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         'post_id': postId,
         'user_id': session.user.id,
       });
+    } on PostgrestException catch (e) {
+      // 23505 = UNIQUE 違反（すでにいいね済み）→ 正常系なので画面はそのまま
+      if (e.code == '23505') {
+        debugPrint('PostFeedNotifier.likePost: already liked (23505), ignoring.');
+        return;
+      }
+      // その他の DB エラー → ロールバックして呼び元へ伝播
+      debugPrint('PostFeedNotifier.likePost failed, rolling back: $e');
+      state = AsyncData(current);
+      rethrow;
     } catch (e, st) {
       // 失敗したら元に戻す（current は未変更なのでそのまま使える）
       debugPrint('PostFeedNotifier.likePost failed, rolling back: $e\n$st');
       state = AsyncData(current);
+      rethrow;
     }
   }
 
@@ -340,10 +351,16 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
           .delete()
           .eq('post_id', postId)
           .eq('user_id', session.user.id);
+    } on PostgrestException catch (e) {
+      // DB エラー → ロールバックして呼び元へ伝播
+      debugPrint('PostFeedNotifier.unlikePost failed, rolling back: $e');
+      state = AsyncData(current);
+      rethrow;
     } catch (e, st) {
       // 失敗したら元に戻す
       debugPrint('PostFeedNotifier.unlikePost failed, rolling back: $e\n$st');
       state = AsyncData(current);
+      rethrow;
     }
   }
 

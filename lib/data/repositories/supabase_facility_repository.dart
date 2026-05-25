@@ -236,9 +236,28 @@ class SupabaseFacilityRepository implements IFacilityRepository {
         .toList();
   }
 
+  // Bug-#16修正: RPC から返る不完全な行（phone/website 等が null）で
+  // 詳細取得済みの完全なキャッシュを上書きしないよう、マージロジックに変更する。
+  // 既存キャッシュに値があるフィールドは null では上書きしない。
   void _updateCache(List<dynamic> rows) {
     for (final row in rows) {
-      _cache[row['id'] as String] = row;
+      final id = (row as Map<String, dynamic>)['id'] as String?;
+      if (id == null) continue;
+
+      final existing = _cache[id];
+      if (existing != null) {
+        // 既存エントリとマージ: null でない新しい値だけを上書きし、
+        // null の新しい値は既存の（詳細取得済みの）値を保持する。
+        final existingMap = Map<String, dynamic>.from(
+            existing as Map<String, dynamic>);
+        final merged = {...existingMap};
+        row.forEach((k, v) {
+          if (v != null) merged[k] = v;
+        });
+        _cache[id] = merged;
+      } else {
+        _cache[id] = row;
+      }
     }
   }
 }

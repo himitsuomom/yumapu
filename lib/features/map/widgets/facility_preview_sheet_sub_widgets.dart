@@ -42,14 +42,10 @@ class _PhotoPlaceholder extends StatelessWidget {
   const _PhotoPlaceholder({
     required this.isLoading,
     required this.typeColor,
-    required this.isUploading,
-    required this.onAddPhoto,
   });
 
   final bool isLoading;
   final Color typeColor;
-  final bool isUploading;
-  final VoidCallback onAddPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -75,25 +71,6 @@ class _PhotoPlaceholder extends StatelessWidget {
                     style:
                         TextStyle(color: Colors.grey[400], fontSize: 12),
                   ),
-                  const SizedBox(height: 10),
-                  isUploading
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: typeColor),
-                        )
-                      : FilledButton.tonalIcon(
-                          onPressed: onAddPhoto,
-                          icon: const Icon(
-                              Icons.add_photo_alternate, size: 16),
-                          label: const Text('写真を追加'),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            textStyle: const TextStyle(fontSize: 12),
-                          ),
-                        ),
                 ],
               ),
       ),
@@ -107,14 +84,10 @@ class _PhotoCarousel extends StatefulWidget {
   const _PhotoCarousel({
     required this.urls,
     required this.typeColor,
-    required this.isUploading,
-    required this.onAddPhoto,
   });
 
   final List<String> urls;
   final Color typeColor;
-  final bool isUploading;
-  final VoidCallback onAddPhoto;
 
   @override
   State<_PhotoCarousel> createState() => _PhotoCarouselState();
@@ -185,50 +158,6 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
                 ),
               ),
             ),
-          Positioned(
-            left: 10,
-            bottom: 10,
-            child: widget.isUploading
-                ? Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    ),
-                  )
-                : GestureDetector(
-                    onTap: widget.onAddPhoto,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add_a_photo,
-                              color: Colors.white, size: 14),
-                          SizedBox(width: 4),
-                          Text(
-                            '写真を追加',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-          ),
         ],
       ),
     );

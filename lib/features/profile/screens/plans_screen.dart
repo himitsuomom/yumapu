@@ -72,22 +72,26 @@ class PlansScreen extends ConsumerWidget {
             );
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: plans.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final plan = plans[index];
-              return _PlanCard(
-                plan: plan,
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/plan-detail',
-                  arguments: plan,
-                ),
-                onDelete: () => _confirmDelete(context, ref, plan),
-              );
-            },
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(myPlansProvider),
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: plans.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final plan = plans[index];
+                return _PlanCard(
+                  plan: plan,
+                  onTap: () => Navigator.pushNamed(
+                    context,
+                    '/plan-detail',
+                    arguments: plan,
+                  ),
+                  onDelete: () => _confirmDelete(context, ref, plan),
+                );
+              },
+            ),
           );
         },
       ),
@@ -176,23 +180,25 @@ class PlansScreen extends ConsumerWidget {
       return;
     }
 
-    final plan = await ref.read(planNotifierProvider.notifier).createPlan(
-          title: title,
-          description: descController.text.trim().isEmpty
-              ? null
-              : descController.text.trim(),
-          isPublic: isPublic,
-        );
+    try {
+      final plan = await ref.read(planNotifierProvider.notifier).createPlan(
+            title: title,
+            description: descController.text.trim().isEmpty
+                ? null
+                : descController.text.trim(),
+            isPublic: isPublic,
+          );
 
-    if (!context.mounted) return;
-    if (plan != null) {
+      if (!context.mounted) return;
+      // myPlansProvider は createPlan 内で invalidate 済みだが念のため
       ref.invalidate(myPlansProvider);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('「${plan.title}」を作成しました')),
       );
-    } else {
+    } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('作成に失敗しました。もう一度お試しください')),
+        SnackBar(content: Text('作成に失敗しました: $e')),
       );
     }
   }

@@ -62,11 +62,11 @@ class AppConfig {
   // ── Feature flags (default off — enable via --dart-define) ──────────────
   static const bool isCheckinEnabled = bool.fromEnvironment(
     'FEATURE_CHECKIN',
-    defaultValue: false,
+    defaultValue: true,
   );
   static const bool isReviewEnabled = bool.fromEnvironment(
     'FEATURE_REVIEW',
-    defaultValue: false,
+    defaultValue: true,
   );
   static const bool isRankingEnabled = bool.fromEnvironment(
     'FEATURE_RANKING',

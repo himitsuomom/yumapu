@@ -40,10 +40,10 @@ class SupabaseFollowRepository implements IFollowRepository {
   Future<Result<void>> follow(String targetUserId) => runCatching(() async {
         final session = _client.auth.currentSession;
         if (session == null) throw const NotAuthenticatedException();
-        await _client.from('user_follows').insert({
-          'follower_id': session.user.id,
-          'following_id': targetUserId,
-        });
+        await _client.from('user_follows').upsert(
+          {'follower_id': session.user.id, 'following_id': targetUserId},
+          onConflict: 'follower_id,following_id',
+        );
       });
 
   @override

@@ -13,12 +13,13 @@ import 'package:yu_map/providers/auth_provider.dart';
 
 /// 報告種別の定義
 enum FacilityReportType {
-  hoursWrong,   // 営業時間・定休日が違う
-  closed,       // 閉業・閉鎖している
-  addressWrong, // 住所が違う
-  phoneWrong,   // 電話番号が違う
-  priceWrong,   // 料金が違う
-  other,        // その他
+  hoursWrong,      // 営業時間・定休日が違う
+  closed,          // 閉業・閉鎖している
+  addressWrong,    // 住所が違う
+  phoneWrong,      // 電話番号が違う
+  priceWrong,      // 料金が違う
+  websiteSuggestion, // 公式サイトURLを教える
+  other,           // その他
 }
 
 extension FacilityReportTypeEx on FacilityReportType {
@@ -34,6 +35,8 @@ extension FacilityReportTypeEx on FacilityReportType {
         return '電話番号が違う';
       case FacilityReportType.priceWrong:
         return '料金が違う';
+      case FacilityReportType.websiteSuggestion:
+        return '公式サイトURLを知っている';
       case FacilityReportType.other:
         return 'その他';
     }
@@ -51,6 +54,8 @@ extension FacilityReportTypeEx on FacilityReportType {
         return Icons.phone_disabled_outlined;
       case FacilityReportType.priceWrong:
         return Icons.money_off_outlined;
+      case FacilityReportType.websiteSuggestion:
+        return Icons.language_outlined;
       case FacilityReportType.other:
         return Icons.edit_note_outlined;
     }
@@ -69,6 +74,8 @@ extension FacilityReportTypeEx on FacilityReportType {
         return 'phone_wrong';
       case FacilityReportType.priceWrong:
         return 'price_wrong';
+      case FacilityReportType.websiteSuggestion:
+        return 'website_suggestion';
       case FacilityReportType.other:
         return 'other';
     }
@@ -98,6 +105,7 @@ class _FacilityReportScreenState extends ConsumerState<FacilityReportScreen> {
   final _formKey = GlobalKey<FormState>();
   final _detailCtrl = TextEditingController();
   final _contactCtrl = TextEditingController();
+  final _websiteCtrl = TextEditingController();
 
   FacilityReportType? _selectedType;
   bool _isSubmitting = false;
@@ -106,6 +114,7 @@ class _FacilityReportScreenState extends ConsumerState<FacilityReportScreen> {
   void dispose() {
     _detailCtrl.dispose();
     _contactCtrl.dispose();
+    _websiteCtrl.dispose();
     super.dispose();
   }
 
@@ -138,11 +147,15 @@ class _FacilityReportScreenState extends ConsumerState<FacilityReportScreen> {
       // ログイン済みなら user_id も保存（自分の報告履歴を確認できるようにするため）
       final userId = ref.read(sessionProvider)?.user.id;
 
+      final websiteUrl = _websiteCtrl.text.trim();
+
       await client.from('facility_issue_reports').insert({
         'facility_id': widget.facilityId,
         'report_type': _selectedType!.dbValue,
         if (_detailCtrl.text.trim().isNotEmpty)
           'detail': _detailCtrl.text.trim(),
+        if (websiteUrl.isNotEmpty)
+          'suggested_url': websiteUrl,
         if (_contactCtrl.text.trim().isNotEmpty)
           'contact': _contactCtrl.text.trim(),
         if (userId != null) 'user_id': userId,
@@ -203,6 +216,30 @@ class _FacilityReportScreenState extends ConsumerState<FacilityReportScreen> {
               const SizedBox(height: 8),
               ..._buildReportTypeItems(),
               const SizedBox(height: 24),
+
+              // ── 公式サイトURL（websiteSuggestion 選択時のみ表示）─────────
+              if (_selectedType == FacilityReportType.websiteSuggestion) ...[
+                const _SectionLabel(label: '公式サイトURL *'),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _websiteCtrl,
+                  keyboardType: TextInputType.url,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    hintText: '例: https://example.com',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.language_outlined),
+                  ),
+                  validator: (v) {
+                    if (_selectedType != FacilityReportType.websiteSuggestion) return null;
+                    if (v == null || v.trim().isEmpty) return 'URLを入力してください';
+                    final uri = Uri.tryParse(v.trim());
+                    if (uri == null || !uri.hasScheme) return '正しいURLを入力してください（https://〜）';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+              ],
 
               // ── 詳細テキスト（任意）────────────────────────────────────
               const _SectionLabel(label: '詳細（任意）'),

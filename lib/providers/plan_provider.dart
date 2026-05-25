@@ -12,8 +12,8 @@ import 'package:yu_map/providers/auth_provider.dart';
 // ── プラン一覧 ────────────────────────────────────────────────────────────────
 
 /// ログイン中ユーザーの湯めぐりプラン一覧（更新日時降順）
-final myPlansProvider =
-    FutureProvider.autoDispose<List<OnsenPlan>>((ref) async {
+/// autoDispose を使わないことで、ボトムシートが閉じても状態を保持する。
+final myPlansProvider = FutureProvider<List<OnsenPlan>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final session = ref.watch(sessionProvider);
   if (client == null || session == null) return [];
@@ -38,8 +38,8 @@ class PlanNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
-  /// 新しいプランを作成する
-  Future<OnsenPlan?> createPlan({
+  /// 新しいプランを作成する。失敗時は例外を throw する。
+  Future<OnsenPlan> createPlan({
     required String title,
     String? description,
     bool isPublic = false,
@@ -47,8 +47,9 @@ class PlanNotifier extends AsyncNotifier<void> {
     final client = ref.read(supabaseClientProvider);
     final session = ref.read(sessionProvider);
     if (client == null || session == null) {
-      state = AsyncError('ログインが必要です', StackTrace.current);
-      return null;
+      final err = Exception('ログインが必要です');
+      state = AsyncError(err, StackTrace.current);
+      throw err;
     }
 
     state = const AsyncLoading();
@@ -67,10 +68,11 @@ class PlanNotifier extends AsyncNotifier<void> {
           .single();
 
       state = const AsyncData(null);
+      ref.invalidate(myPlansProvider);
       return OnsenPlan.fromJson(data);
     } catch (e, st) {
       state = AsyncError(e, st);
-      return null;
+      rethrow;
     }
   }
 
@@ -97,11 +99,15 @@ class PlanNotifier extends AsyncNotifier<void> {
       final newIds = [...currentFacilityIds, facilityId];
       await client
           .from('onsen_plans')
-          .update({'facility_ids': newIds})
+          .update({
+            'facility_ids': newIds,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
           .eq('id', planId)
           .eq('user_id', session.user.id);
 
       state = const AsyncData(null);
+      ref.invalidate(myPlansProvider);
     } catch (e, st) {
       state = AsyncError(e, st);
     }

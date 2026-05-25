@@ -24,8 +24,10 @@ class SupabaseFavoriteRepository implements IFavoriteRepository {
       runCatching(() async {
         final session = _client.auth.currentSession;
         if (session == null) throw const NotAuthenticatedException();
-        await _client.from('favorites').insert(
-            {'user_id': session.user.id, 'facility_id': facilityId});
+        await _client.from('favorites').upsert(
+          {'user_id': session.user.id, 'facility_id': facilityId},
+          onConflict: 'user_id,facility_id',
+        );
       });
 
   @override

@@ -8,7 +8,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yu_map/domain/entities/facility.dart';
 import 'package:yu_map/providers/facility_provider.dart';
@@ -68,14 +70,33 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final source = await _showImageSourceDialog();
     if (source == null) return;
 
-    final picked = await _imagePicker.pickImage(
-      source: source,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 80,
-    );
-    if (picked != null) {
-      setState(() => _pickedImages.add(picked));
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 80,
+      );
+      if (picked != null) {
+        setState(() => _pickedImages.add(picked));
+      }
+    } on PlatformException catch (e) {
+      if (e.code == 'camera_access_denied' || e.code == 'photo_access_denied') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('カメラ・写真へのアクセス許可を設定で有効にしてください'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('画像の選択に失敗しました: $e')),
+        );
+      }
     }
   }
 
@@ -169,6 +190,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           const SnackBar(content: Text('投稿しました！')),
         );
         Navigator.of(context).pop();
+      }
+    } on StorageException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('画像のアップロードに失敗しました: ${e.message}')),
+        );
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('投稿の保存に失敗しました: ${e.message}')),
+        );
       }
     } catch (e) {
       if (mounted) {

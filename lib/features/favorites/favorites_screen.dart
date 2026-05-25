@@ -71,7 +71,7 @@ final _favoriteFacilitiesProvider =
       .eq('user_id', session.user.id)
       .order('created_at', ascending: false) as List;
 
-  return rows
+  final facilities = rows
       .map((r) {
         final fJson = r['facilities'] as Map<String, dynamic>?;
         if (fJson == null) return null;
@@ -79,6 +79,10 @@ final _favoriteFacilitiesProvider =
       })
       .whereType<Facility>()
       .toList();
+
+  // 重複排除: facility_id でユニークに絞る（DB制約追加前の既存重複データ対策）
+  final seen = <String>{};
+  return facilities.where((f) => seen.add(f.id)).toList();
 });
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -302,7 +306,13 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                   );
                 }
 
-                return ListView.separated(
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    ref.invalidate(_favoriteFacilitiesProvider);
+                    ref.invalidate(favoritesProvider);
+                  },
+                  child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: facilities.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
@@ -422,6 +432,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                       ),
                     );
                   },
+                ),
                 );
               },
               loading: () => const LoadingWidget(),

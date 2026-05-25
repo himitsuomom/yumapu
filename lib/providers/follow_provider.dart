@@ -49,6 +49,7 @@ class FollowingNotifier extends AsyncNotifier<Set<String>> {
       // DB書き込み失敗: ロールバック
       debugPrint('FollowingNotifier.follow failed, rolling back: $e');
       state = AsyncData(current);
+      throw e;
     });
   }
 
@@ -67,6 +68,7 @@ class FollowingNotifier extends AsyncNotifier<Set<String>> {
       // DB削除失敗: ロールバック
       debugPrint('FollowingNotifier.unfollow failed, rolling back: $e');
       state = AsyncData(current);
+      throw e;
     });
   }
 
