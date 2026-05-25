@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
 import 'package:yu_map/features/feed/screens/create_post_screen.dart';
 import 'package:yu_map/features/feed/screens/post_detail_screen.dart';
 import 'package:yu_map/models/post.dart';

@@ -367,25 +367,27 @@ class _LikeButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: isSignedIn
-          ? () async {
-              try {
-                if (post.isLiked) {
-                  await ref.read(postFeedProvider.notifier).unlikePost(post.id);
-                } else {
-                  await ref.read(postFeedProvider.notifier).likePost(post.id);
-                }
-              } catch (_) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('いいねに失敗しました。もう一度お試しください。'),
-                    ),
-                  );
-                }
-              }
-            }
-          : null,
+      onTap: () async {
+        if (!isSignedIn) {
+          await GuestRestrictionDialog.show(context, featureName: 'いいね');
+          return;
+        }
+        try {
+          if (post.isLiked) {
+            await ref.read(postFeedProvider.notifier).unlikePost(post.id);
+          } else {
+            await ref.read(postFeedProvider.notifier).likePost(post.id);
+          }
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('いいねに失敗しました。もう一度お試しください。'),
+              ),
+            );
+          }
+        }
+      },
       child: Row(
         children: [
           Icon(

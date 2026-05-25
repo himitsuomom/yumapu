@@ -103,6 +103,7 @@ class _FacilityInfoCard extends ConsumerWidget {
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       height: 1.2,
+                      color: Colors.black87,
                     ),
                   ),
                   if (reviewCount == 0)

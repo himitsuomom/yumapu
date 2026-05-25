@@ -125,27 +125,14 @@ class _FacilityListSheetState extends ConsumerState<_FacilityListSheet> {
         );
   }
 
-  void _onAmenitiesChanged(List<String> ids) {
+  void _onAmenityToggled(String amenityId) {
+    final currentIds = ref.read(facilitySearchParamsProvider).amenityIds;
+    final newIds = currentIds.contains(amenityId)
+        ? currentIds.where((id) => id != amenityId).toList()
+        : [...currentIds, amenityId];
     ref.read(facilitySearchParamsProvider.notifier).update(
-          (p) => p.copyWith(amenityIds: ids, page: 0),
+          (p) => p.copyWith(amenityIds: newIds, page: 0),
         );
-  }
-
-  Future<void> _showAmenityPicker() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => _ExploreAmenityPickerSheet(
-        selectedIds: ref.read(facilitySearchParamsProvider).amenityIds,
-        onChanged: (ids) {
-          Navigator.of(ctx).pop();
-          _onAmenitiesChanged(ids);
-        },
-      ),
-    );
   }
 
   void _onOpenNowChanged(bool value) {
@@ -397,7 +384,7 @@ class _FacilityListSheetState extends ConsumerState<_FacilityListSheet> {
                 selectedFacilityTypeId: params.facilityTypeId,
                 selectedAmenityIds: params.amenityIds,
                 onFacilityTypeChanged: _onFacilityTypeChanged,
-                onShowAmenityPicker: _showAmenityPicker,
+                onAmenityToggled: _onAmenityToggled,
                 isOpenNow: params.isOpenNow,
                 onOpenNowChanged: _onOpenNowChanged,
               ),
