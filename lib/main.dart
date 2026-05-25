@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,7 +21,10 @@ import 'package:yu_map/services/subscription_service.dart';
 /// Must be called BEFORE MobileAds.instance.initialize() per Apple guidelines.
 /// No-op on Android.
 Future<void> _requestTrackingPermission() async {
+  return; // Disabled for testing — re-enable before production release
+  // ignore: dead_code
   if (!Platform.isIOS) return;
+  if (kDebugMode) return;
   final status = await AppTrackingTransparency.trackingAuthorizationStatus;
   if (status == TrackingStatus.notDetermined) {
     // Brief delay ensures the app has finished launching before showing the

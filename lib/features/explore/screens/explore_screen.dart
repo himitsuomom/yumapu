@@ -44,8 +44,12 @@ class ExploreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // MapScreen は自前の Scaffold を持つため、Stack で重ねる
+    // MapScreen は自前の Scaffold を持つが、HomeShell の body は
+    // BottomNavigationBar の高さ分だけ制約される。
+    // clipBehavior: Clip.hardEdge でネストした Scaffold の描画が
+    // 隣接タブ側にはみ出すのを防ぐ。
     return const Stack(
+      clipBehavior: Clip.hardEdge,
       children: [
         // ── 背景: 地図（MapScreen をそのまま利用）──────────────────────────
         MapScreen(),
@@ -318,11 +322,13 @@ class _FacilityListSheetState extends ConsumerState<_FacilityListSheet> {
     });
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.3,
-      minChildSize: 0.1,
+      initialChildSize: 0.43,
+      minChildSize: 0.43,
       maxChildSize: 0.9,
       builder: (context, scrollController) {
-        return Container(
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: Container(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius:
@@ -419,6 +425,7 @@ class _FacilityListSheetState extends ConsumerState<_FacilityListSheet> {
               ),
             ],
           ),
+        ),
         );
       },
     );
