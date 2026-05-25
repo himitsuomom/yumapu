@@ -118,8 +118,6 @@ class NotificationService {
   /// ログイン後に呼ぶことで「アプリの価値を理解したユーザー」に許可を求めるため、
   /// 起動直後に表示するより許可率が高くなる（industry standard パターン）。
   Future<void> requestPermissionLazily() async {
-    return; // Disabled for testing — re-enable before production release
-    // ignore: dead_code
     final current = await _messaging.getNotificationSettings();
     if (current.authorizationStatus != AuthorizationStatus.notDetermined) {
       // 既に判定済み（granted / denied / provisional）→ 再リクエストしない

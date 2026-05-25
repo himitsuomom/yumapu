@@ -21,8 +21,6 @@ import 'package:yu_map/services/subscription_service.dart';
 /// Must be called BEFORE MobileAds.instance.initialize() per Apple guidelines.
 /// No-op on Android.
 Future<void> _requestTrackingPermission() async {
-  return; // Disabled for testing — re-enable before production release
-  // ignore: dead_code
   if (!Platform.isIOS) return;
   if (kDebugMode) return;
   final status = await AppTrackingTransparency.trackingAuthorizationStatus;
