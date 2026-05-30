@@ -13,6 +13,24 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
+    <!-- Android 13以上でフォトライブラリにアクセスするために必要 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+
+    <!-- 🗺️ 外部マップアプリ起動のためのクエリ許可 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="maps.google.com" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="map.yahoo.co.jp" />
+        </intent>
+    </queries>
 
     <!-- 📱 ハードウェア要件（Google Playでのフィルタリング用） -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>

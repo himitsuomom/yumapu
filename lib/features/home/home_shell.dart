@@ -2,23 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/core/navigation/app_navigator.dart';
 import 'package:yu_map/core/widgets/guest_restriction_dialog.dart';
+import 'package:yu_map/features/explore/screens/explore_screen.dart';
 import 'package:yu_map/features/favorites/favorites_screen.dart';
 import 'package:yu_map/features/feed/screens/feed_screen.dart';
-import 'package:yu_map/features/map/screens/map_screen.dart';
 import 'package:yu_map/features/profile/screens/profile_screen.dart';
-import 'package:yu_map/features/search/screens/search_screen.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/favorites_provider.dart';
 import 'package:yu_map/providers/navigation_provider.dart';
 
 /// Root shell for signed-in users.
 ///
-/// Manages 5 tabs with [IndexedStack] so each tab retains its state across
+/// Manages 4 tabs with [IndexedStack] so each tab retains its state across
 /// switches. Favorites are loaded eagerly on first mount.
 ///
-/// **タブ構成（v41更新）**: 地図 / 検索 / 投稿 / お気に入り / プロフィール
-/// - フィードをボトムナビに昇格（UX v20分析の最重要課題対応）。
-/// - ランキングはプロフィール画面のランキングバナー・カードから1タップで到達可能。
+/// **タブ構成（#9統合）**: 探す(Explore) / ホーム / お気に入り / プロフィール
+/// - 地図タブと検索タブを [ExploreScreen] に統合（#9 Phase A）。
+/// - ExploreScreen: 地図全画面 + DraggableScrollableSheet で施設リスト表示。
 ///
 /// **遅延ロード方式**: タブを初めて訪問したときにのみ画面を生成する。
 class HomeShell extends ConsumerStatefulWidget {
@@ -40,20 +39,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   /// タブ番号に対応する画面ウィジェットを返す。
   ///
-  /// タブ構成: 0=地図 / 1=検索 / 2=投稿（フィード） / 3=お気に入り / 4=プロフィール
+  /// タブ構成: 0=探す(Explore) / 1=ホーム（フィード） / 2=お気に入り / 3=プロフィール
   Widget _buildScreen(int index) {
     switch (index) {
       case 0:
-        return const MapScreen();
+        // #9統合: 地図+検索を ExploreScreen に統合。
+        return const ExploreScreen();
       case 1:
-        return const SearchScreen();
-      case 2:
-        // v41更新: フィードをボトムナビに昇格（UX v20分析の最重要課題対応）。
-        // ランキングはプロフィール画面のランキングバナー・カードから1タップで到達可能。
         return const FeedScreen();
-      case 3:
+      case 2:
         return const FavoritesScreen();
-      case 4:
+      case 3:
         return const ProfileScreen();
       default:
         return const SizedBox.shrink();
@@ -112,7 +108,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       body: IndexedStack(
         index: _currentIndex,
         // 訪問済みのタブだけ実際の画面を生成し、未訪問は空ウィジェットにする
-        children: List.generate(5, (index) {
+        children: List.generate(4, (index) {
           if (!_visitedIndices.contains(index)) {
             return const SizedBox.shrink();
           }
@@ -125,9 +121,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           return BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: (index) async {
-              // ゲストモード時: お気に入り(3)・プロフィール(4) はモーダルで案内する
-              if (isGuestMode && (index == 3 || index == 4)) {
-                final tabName = index == 3 ? 'お気に入り' : 'プロフィール';
+              // ゲストモード時: お気に入り(2)・プロフィール(3) はモーダルで案内する
+              if (isGuestMode && (index == 2 || index == 3)) {
+                final tabName = index == 2 ? 'お気に入り' : 'プロフィール';
                 final goLogin = await GuestRestrictionDialog.show(
                   context,
                   featureName: tabName,
@@ -145,27 +141,22 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               // 外部からのタブ切り替えと状態を一致させる
               ref.read(homeTabIndexProvider.notifier).state = index;
             },
-            // 5タブ以上は type を fixed にしないとラベルが消える
+            // #9統合: 4タブ構成。type=fixed でラベルを常時表示。
             type: BottomNavigationBarType.fixed,
             items: [
+              // 0: 探す（地図+検索統合）
               const BottomNavigationBarItem(
-                icon: Icon(Icons.map_outlined),
-                activeIcon: Icon(Icons.map),
-                label: '地図',
+                icon: Icon(Icons.explore_outlined),
+                activeIcon: Icon(Icons.explore),
+                label: '探す',
               ),
+              // 1: ホーム（フィード）
               const BottomNavigationBarItem(
-                icon: Icon(Icons.search),
-                label: '検索',
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'ホーム',
               ),
-              // v41更新: フィードをボトムナビに昇格（UX v20最重要課題対応）。
-              // UX-V24-3: ラベルを「投稿」→「フィード」に変更。
-              // 「投稿」だと「投稿する画面」と誤解されやすいため、コンテンツを閲覧する意味の「フィード」に統一。
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.dynamic_feed_outlined),
-                activeIcon: Icon(Icons.dynamic_feed),
-                label: 'フィード',
-              ),
-              // UX-V7-6対応: ゲストモード時はロックバッジを表示して利用制限を事前に示す
+              // 2: お気に入り（ゲストモード時はロックバッジ）
               BottomNavigationBarItem(
                 icon: _GuestLockIcon(
                   icon: Icons.favorite_border,
@@ -177,6 +168,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 ),
                 label: 'お気に入り',
               ),
+              // 3: プロフィール（ゲストモード時はロックバッジ）
               BottomNavigationBarItem(
                 icon: _GuestLockIcon(
                   icon: Icons.person_outline,

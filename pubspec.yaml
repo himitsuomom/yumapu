@@ -79,6 +79,7 @@ dev_dependencies:
   json_serializable: ^6.7.1
   riverpod_generator: ^2.3.3
   mocktail: ^1.0.0
+  flutter_launcher_icons: ^0.13.1
   # スプラッシュ画面生成ツール（コード生成用、依存はdependencies側に記載）
   # `flutter pub run flutter_native_splash:create` でネイティブスプラッシュを生成する
 
@@ -89,3 +90,14 @@ flutter:
     - .env
     - assets/images/
     - assets/icons/
+    - assets/icon/
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/icon/icon_yuma.png"
+  adaptive_icon_background: "#C0392B"
+  adaptive_icon_foreground: "assets/icon/icon_yuma.png"
+  remove_alpha_ios: true
+  web:
+    generate: false

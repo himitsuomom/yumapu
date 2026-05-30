@@ -26,31 +26,6 @@ Future<void> _launchWeb(BuildContext context, String url) async {
   }
 }
 
-Future<void> _launchMap(
-  BuildContext context,
-  double lat,
-  double lng, {
-  required String name,
-}) async {
-  final encodedName = Uri.encodeComponent(name);
-  final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng($encodedName)');
-  final appleMapsUri =
-      Uri.parse('https://maps.apple.com/?ll=$lat,$lng&q=$encodedName');
-  try {
-    if (await canLaunchUrl(geoUri)) {
-      await launchUrl(geoUri);
-    } else {
-      await launchUrl(appleMapsUri,
-          mode: LaunchMode.externalApplication);
-    }
-  } catch (_) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('地図アプリを開けませんでした')),
-    );
-  }
-}
-
 // ── 施設情報カード（名前・評価・アメニティ・アクション）────────────────────────
 
 class _FacilityInfoCard extends ConsumerWidget {
@@ -128,6 +103,7 @@ class _FacilityInfoCard extends ConsumerWidget {
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       height: 1.2,
+                      color: Colors.black87,
                     ),
                   ),
                   if (reviewCount == 0)
@@ -231,10 +207,10 @@ class _FacilityInfoCard extends ConsumerWidget {
                     icon: Icons.near_me_outlined,
                     label: 'ナビ',
                     color: typeColor,
-                    onTap: () => _launchMap(
+                    onTap: () => ExternalMapLauncher.showMapPickerSheet(
                       context,
-                      facility.latitude,
-                      facility.longitude,
+                      lat: facility.latitude,
+                      lng: facility.longitude,
                       name: facility.displayName,
                     ),
                   ),

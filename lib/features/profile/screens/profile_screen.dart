@@ -77,7 +77,17 @@ class ProfileScreen extends ConsumerWidget {
     final favoriteCount = favoritesAsync.valueOrNull?.length ?? 0;
     final recentVisits = visitAsync.valueOrNull?.take(5).toList() ?? [];
 
-    return ListView(
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(currentUserProfileProvider);
+        ref.invalidate(visitCountProvider);
+        ref.invalidate(visitListProvider);
+        ref.invalidate(favoritesProvider);
+        ref.invalidate(myPlansProvider);
+        ref.invalidate(myRankingProvider);
+      },
+      child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         Center(
@@ -246,6 +256,7 @@ class ProfileScreen extends ConsumerWidget {
           onPressed: () => Navigator.of(context).pushNamed('/settings'),
         ),
       ],
+    ),
     );
   }
 }

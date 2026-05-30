@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yu_map/providers/auth_provider.dart';
 import 'package:yu_map/providers/follow_provider.dart';
+import 'package:yu_map/providers/navigation_provider.dart';
 import 'package:yu_map/providers/ranking_provider.dart';
 
 part 'ranking_screen_sub_widgets.dart';

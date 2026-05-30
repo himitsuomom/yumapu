@@ -241,37 +241,40 @@ class _AddToPlanSheetState extends ConsumerState<AddToPlanSheet> {
   Future<void> _createPlanAndAdd() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final newPlan = await ref.read(planNotifierProvider.notifier).createPlan(
-          title: _titleCtrl.text.trim(),
-        );
+    try {
+      final newPlan = await ref.read(planNotifierProvider.notifier).createPlan(
+            title: _titleCtrl.text.trim(),
+          );
 
-    if (!mounted) return;
-    if (newPlan == null) {
+      if (!mounted) return;
+
+      await ref.read(planNotifierProvider.notifier).addFacilityToPlan(
+            planId: newPlan.id,
+            facilityId: widget.facility.id,
+            currentFacilityIds: newPlan.facilityIds,
+          );
+
+      if (!mounted) return;
+
+      // myPlansProvider は createPlan / addFacilityToPlan 内で invalidate 済みだが
+      // 万が一のため呼んでおく（冪等）
+      ref.invalidate(myPlansProvider);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('プランの作成に失敗しました'),
+        SnackBar(
+          content: Text('「${newPlan.title}」を作成して追加しました'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('プラン作成エラー: $e'),
           backgroundColor: Colors.red,
         ),
       );
-      return;
     }
-
-    await ref.read(planNotifierProvider.notifier).addFacilityToPlan(
-          planId: newPlan.id,
-          facilityId: widget.facility.id,
-          currentFacilityIds: newPlan.facilityIds,
-        );
-
-    if (!mounted) return;
-
-    ref.invalidate(myPlansProvider);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('「${newPlan.title}」を作成して追加しました'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    Navigator.of(context).pop();
   }
 }

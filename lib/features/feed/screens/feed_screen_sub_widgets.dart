@@ -215,6 +215,9 @@ class _PostCard extends ConsumerWidget {
                     ),
                   ],
                 ),
+              // 他人の投稿にはフォローボタンを表示（ログイン時のみ）
+              if (!isMyPost && isSignedIn)
+                _FollowButton(userId: post.userId),
             ],
           ),
           const SizedBox(height: 10),
@@ -291,11 +294,28 @@ class _PostCard extends ConsumerWidget {
 
           const SizedBox(height: 8),
 
-          // ── フッター（いいねボタン・コメント数） ──────────────────────
+          // ── フッター（いいねボタン・リポスト・コメント数） ──────────────────────
           Row(
             children: [
               // いいねボタン（ログイン時のみ有効）
               _LikeButton(post: post, isSignedIn: isSignedIn),
+              const SizedBox(width: 16),
+              // リポストボタン（プレースホルダー）
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.repeat_outlined, size: 20),
+                color: const Color(0xFF757575),
+                tooltip: 'リポスト',
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('リポスト機能は近日公開予定です'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
               const SizedBox(width: 16),
               // commentsCount は posts.comments_count（DBトリガーで自動更新）
               // UX-V10-1: コメントアイコンをタップすると PostDetailScreen を
@@ -347,15 +367,27 @@ class _LikeButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onTap: isSignedIn
-          ? () {
-              if (post.isLiked) {
-                ref.read(postFeedProvider.notifier).unlikePost(post.id);
-              } else {
-                ref.read(postFeedProvider.notifier).likePost(post.id);
-              }
-            }
-          : null,
+      onTap: () async {
+        if (!isSignedIn) {
+          await GuestRestrictionDialog.show(context, featureName: 'いいね');
+          return;
+        }
+        try {
+          if (post.isLiked) {
+            await ref.read(postFeedProvider.notifier).unlikePost(post.id);
+          } else {
+            await ref.read(postFeedProvider.notifier).likePost(post.id);
+          }
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('いいねに失敗しました。もう一度お試しください。'),
+              ),
+            );
+          }
+        }
+      },
       child: Row(
         children: [
           Icon(
@@ -377,6 +409,63 @@ class _LikeButton extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── フォローボタン ────────────────────────────────────────────────────────────
+
+/// 投稿カードのヘッダー右端に表示するフォロー/フォロー中ボタン。
+///
+/// [isFollowingProvider] を watch して楽観的UI更新に対応する。
+/// フォロー中は「フォロー中」ラベルを表示し、タップするとアンフォローする。
+class _FollowButton extends ConsumerWidget {
+  const _FollowButton({required this.userId});
+
+  final String userId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isFollowing = ref.watch(isFollowingProvider(userId));
+
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: isFollowing
+            ? const Color(0xFF757575)
+            : Theme.of(context).colorScheme.primary,
+      ),
+      icon: Icon(
+        isFollowing
+            ? Icons.person_outline
+            : Icons.person_add_alt_1_outlined,
+        size: 16,
+      ),
+      label: Text(
+        isFollowing ? 'フォロー中' : 'フォロー',
+        style: const TextStyle(fontSize: 12),
+      ),
+      onPressed: () async {
+        try {
+          if (isFollowing) {
+            await ref.read(followingIdsProvider.notifier).unfollow(userId);
+          } else {
+            await ref.read(followingIdsProvider.notifier).follow(userId);
+          }
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(isFollowing
+                    ? 'アンフォローに失敗しました。もう一度お試しください。'
+                    : 'フォローに失敗しました。もう一度お試しください。'),
+              ),
+            );
+          }
+        }
+      },
     );
   }
 }

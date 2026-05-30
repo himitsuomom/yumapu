@@ -97,11 +97,11 @@ class _MyRankCard extends StatelessWidget {
   }
 }
 
-class _NoRankingCard extends StatelessWidget {
+class _NoRankingCard extends ConsumerWidget {
   const _NoRankingCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       margin: const EdgeInsets.all(16),
       child: Padding(
@@ -123,6 +123,7 @@ class _NoRankingCard extends StatelessWidget {
               icon: const Icon(Icons.map_outlined, size: 16),
               label: const Text('地図で施設を探す'),
               onPressed: () {
+                ref.read(homeTabIndexProvider.notifier).state = 0;
                 Navigator.of(context).popUntil((route) => route.isFirst);
               },
             ),
