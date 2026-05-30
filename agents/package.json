@@ -12,7 +12,10 @@
     "ingest:reports": "npx tsx completeness/issue-report-ingester.ts",
     "recrawl": "npx tsx quality/recrawl-scheduler.ts",
     "auto-merge": "npx tsx quality/auto-merger.ts",
-    "dedup": "npx tsx dedup/duplicate-finder.ts"
+    "dedup": "npx tsx dedup/duplicate-finder.ts",
+    "national": "npx tsx scout/national/national-orchestrator.ts",
+    "national:status": "npx tsx scout/national/cli-status.ts",
+    "national:promote": "npx tsx scout/national/promoter.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
