@@ -7,7 +7,12 @@
     "scout": "npx tsx scout/index.ts",
     "commander": "npx tsx commander/index.ts",
     "test:scout": "npx tsx scout/test.ts",
-    "test:phase3": "npx tsx scout/test.ts --facilities 3"
+    "test:phase3": "npx tsx scout/test.ts --facilities 3",
+    "coverage": "npx tsx completeness/coverage-reporter.ts",
+    "ingest:reports": "npx tsx completeness/issue-report-ingester.ts",
+    "recrawl": "npx tsx quality/recrawl-scheduler.ts",
+    "auto-merge": "npx tsx quality/auto-merger.ts",
+    "dedup": "npx tsx dedup/duplicate-finder.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

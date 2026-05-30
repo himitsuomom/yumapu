@@ -17,6 +17,11 @@ import { promisify } from 'util'
 import { chromium } from 'playwright'
 import { isAllowed, contentHash } from '../scout/utils/robots.ts'
 import { extractFromPage } from '../scout/extractors/official-site.ts'
+import { scoreQuality } from '../quality/quality-scorer.ts'
+import { printCoverage } from '../completeness/coverage-reporter.ts'
+import { runAutoMerge } from '../quality/auto-merger.ts'
+import { scheduleRecrawls } from '../quality/recrawl-scheduler.ts'
+import { ingestIssueReports } from '../completeness/issue-report-ingester.ts'
 
 const execAsync = promisify(exec)
 
@@ -110,8 +115,14 @@ async function scoutOne(
     }
 
     topData.photos = [...new Set(topData.photos)].slice(0, 10)
-    const filledFields = [topData.price_adult, topData.hours, topData.holiday, topData.phone].filter(f => f !== null).length
-    topData.confidence = filledFields / 4
+    topData.confidence = scoreQuality({
+      price_adult: topData.price_adult,
+      hours: topData.hours,
+      holiday: topData.holiday,
+      phone: topData.phone,
+      amenities: topData.amenities,
+      photos: topData.photos,
+    })
 
     await supabase.from('raw_facility_data').insert({
       facility_id: facilityId, source: 'official_site',
@@ -209,6 +220,7 @@ async function commanderLoop() {
 
     console.log(`\n[Cycle ${cycleNum}] ${new Date().toLocaleString('ja-JP')}`)
     console.log(`  進捗: ${progress.complete}/${progress.total} (残${progress.pending}件)`)
+    if (cycleNum === 1 || cycleNum % 5 === 0) await printCoverage().catch(() => {})
 
     // 全完了チェック
     if (progress.pending === 0) {
@@ -249,6 +261,9 @@ async function commanderLoop() {
 
         // Verification 実行
         if (scoutOk) await runVerification()
+        await ingestIssueReports().catch(() => {})
+        await runAutoMerge().catch(() => {})
+        if (cycleNum % 10 === 0) await scheduleRecrawls().catch(() => {})
 
         await logToWiki(cycleNum, progress, scoutOk)
 
